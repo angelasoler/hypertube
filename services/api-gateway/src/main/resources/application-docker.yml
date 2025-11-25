@@ -1,0 +1,15 @@
+eureka:
+  instance:
+    hostname: api-gateway
+    prefer-ip-address: true
+
+spring:
+  data:
+    redis:
+      host: redis
+      port: 6379
+
+logging:
+  level:
+    root: INFO
+    org.springframework.security: INFO

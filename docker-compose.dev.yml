@@ -1,0 +1,59 @@
+version: '3.8'
+
+# Development-only configuration
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: hypertube_dev
+      POSTGRES_USER: dev_user
+      POSTGRES_PASSWORD: dev_password
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  # Enable hot reload for services in development
+  eureka-server:
+    volumes:
+      - ./services/eureka-server/target:/app/target
+
+  api-gateway:
+    volumes:
+      - ./services/api-gateway/target:/app/target
+
+  user-service:
+    volumes:
+      - ./services/user-management/target:/app/target
+
+  search-service:
+    volumes:
+      - ./services/search-library/target:/app/target
+
+  streaming-service:
+    volumes:
+      - ./services/video-streaming/target:/app/target
+
+  streaming-worker:
+    volumes:
+      - ./services/streaming-worker/target:/app/target
+
+  comment-service:
+    volumes:
+      - ./services/comment-service/target:/app/target
+
+  frontend:
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev
+    environment:
+      NODE_ENV: development

@@ -1,0 +1,294 @@
+version: '3.8'
+
+services:
+  # Infrastructure Services
+  postgres:
+    image: postgres:15-alpine
+    container_name: hypertube-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-hypertube}
+      POSTGRES_USER: ${DB_USER:-hypertube_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-hypertube_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - hypertube-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-hypertube_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: hypertube-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - hypertube-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: hypertube-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-hypertube}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-hypertube_password}
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - hypertube-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Microservices
+  eureka-server:
+    build:
+      context: ./services/eureka-server
+      dockerfile: Dockerfile
+    container_name: hypertube-eureka
+    ports:
+      - "${EUREKA_SERVER_PORT:-8761}:8761"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    networks:
+      - hypertube-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: hypertube-gateway
+    ports:
+      - "${API_GATEWAY_PORT:-8080}:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - hypertube-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  user-service:
+    build:
+      context: ./services/user-management
+      dockerfile: Dockerfile
+    container_name: hypertube-user-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hypertube}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-hypertube_user}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-hypertube_password}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JWT_SECRET: ${JWT_SECRET}
+      OAUTH_42_CLIENT_ID: ${OAUTH_42_CLIENT_ID}
+      OAUTH_42_CLIENT_SECRET: ${OAUTH_42_CLIENT_SECRET}
+      OAUTH_GOOGLE_CLIENT_ID: ${OAUTH_GOOGLE_CLIENT_ID}
+      OAUTH_GOOGLE_CLIENT_SECRET: ${OAUTH_GOOGLE_CLIENT_SECRET}
+      OAUTH_GITHUB_CLIENT_ID: ${OAUTH_GITHUB_CLIENT_ID}
+      OAUTH_GITHUB_CLIENT_SECRET: ${OAUTH_GITHUB_CLIENT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - hypertube-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  search-service:
+    build:
+      context: ./services/search-library
+      dockerfile: Dockerfile
+    container_name: hypertube-search-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hypertube}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-hypertube_user}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-hypertube_password}
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      SPRING_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      YTS_API_URL: ${YTS_API_URL}
+      EZTV_API_URL: ${EZTV_API_URL}
+      TMDB_API_KEY: ${TMDB_API_KEY}
+      TMDB_API_URL: ${TMDB_API_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - hypertube-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  streaming-service:
+    build:
+      context: ./services/video-streaming
+      dockerfile: Dockerfile
+    container_name: hypertube-streaming-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hypertube}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-hypertube_user}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-hypertube_password}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-hypertube}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-hypertube_password}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      VIDEO_CACHE_PATH: ${VIDEO_CACHE_PATH:-/var/hypertube/videos}
+      SUBTITLE_CACHE_PATH: ${SUBTITLE_CACHE_PATH:-/var/hypertube/subtitles}
+      OPENSUBTITLES_API_KEY: ${OPENSUBTITLES_API_KEY}
+    volumes:
+      - video_cache:/var/hypertube/videos
+      - subtitle_cache:/var/hypertube/subtitles
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - hypertube-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  streaming-worker:
+    build:
+      context: ./services/streaming-worker
+      dockerfile: Dockerfile
+    container_name: hypertube-streaming-worker
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hypertube}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-hypertube_user}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-hypertube_password}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-hypertube}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-hypertube_password}
+      VIDEO_CACHE_PATH: ${VIDEO_CACHE_PATH:-/var/hypertube/videos}
+      SUBTITLE_CACHE_PATH: ${SUBTITLE_CACHE_PATH:-/var/hypertube/subtitles}
+      OPENSUBTITLES_API_KEY: ${OPENSUBTITLES_API_KEY}
+    volumes:
+      - video_cache:/var/hypertube/videos
+      - subtitle_cache:/var/hypertube/subtitles
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - hypertube-network
+    deploy:
+      replicas: 2
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep java || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  comment-service:
+    build:
+      context: ./services/comment-service
+      dockerfile: Dockerfile
+    container_name: hypertube-comment-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hypertube}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-hypertube_user}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-hypertube_password}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - hypertube-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hypertube-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NUXT_PUBLIC_API_URL: http://api-gateway:8080
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - hypertube-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+  video_cache:
+    driver: local
+  subtitle_cache:
+    driver: local
+
+networks:
+  hypertube-network:
+    driver: bridge
