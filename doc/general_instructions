@@ -1,0 +1,22 @@
+Chapitre II
+General Instructions
+• For this project you are free to use any programming language of your choice.
+• All frameworks, micro-frameworks, libraries, etc. are allowed, except for those that
+are used to create a video stream from a torrent. This restriction is to ensure that
+the educational purpose of the project is not compromised. For example, libraries
+such as webtorrent, pulsar and peerflix are not permitted.
+• You are free to use any web server of your choice, such as Apache, Nginx or even
+a built-in web server
+• Your entire application must be compatible with the latest versions of Firefox
+and Chrome.
+• Your website must have a decent layout including at least a header, a main section
+and a footer.
+• Your website must be usable on a mobile phone and maintain an acceptable layout
+on small resolutions.
+• All your forms must have correct validations and the entire website must be secure.
+This part is mandatory and will be extensively checked during the defense. To give
+you an idea, here are a few elements that are not considered secure :
+◦ Storing a « plain text » password in your database.
+◦ Allowing injection of HTML or « user » Javascript code in unprotected variables.
+◦ Allowing the upload of unwanted content.
+◦ Allowing alteration of an SQL request

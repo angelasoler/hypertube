@@ -1,0 +1,47 @@
+### What Is the App?
+
+This app is a web-based **video streaming platform** that uses the BitTorrent protocol. It allows users to search for, stream, and watch videos from multiple external sources. The platform combines the functionality of a search engine with a video player, providing a seamless user experience. Users can register and manage their profiles, leave comments on videos, and access the content through a RESTful API. The key innovation is the **just-in-time streaming** of BitTorrent-based video, which begins playback before the entire file is downloaded, and the automatic management of video files on the server.
+
+***
+
+### How Do I Use the App?
+
+The user journey is designed to be straightforward and intuitive.
+
+#### Registration and Login
+* **Sign-up:** Users can create an account by providing basic information like their username, email, and password, or by using Omniauth with either a **42 school account** or another third-party service (e.g., Google or GitHub).
+* **Login:** Returning users can log in with their username and password. If a user forgets their password, they can use a "forgot password" link to receive a password reset email.
+* **Profile Management:** After logging in, a user can modify their profile details, including their email address and profile picture. They can also set their preferred language, which defaults to English.
+
+#### Browsing and Searching
+* **Homepage:** Upon logging in, the user is greeted with a **list of popular videos** displayed as thumbnails. This list is populated from the external video sources and is sorted by criteria like the number of downloads or seeders.
+* **Search:** Users can use the search bar to find specific videos. The search engine queries at least two external video sources, and the results are displayed as a list of thumbnails.
+* **Thumbnail Details:** Each thumbnail provides key information about the video, such as its name, production year, IMDb rating, and a cover image. Watched videos are visually differentiated from unwatched ones.
+* **Dynamic Pagination:** The video list is paginated and uses infinite scroll, loading more results as the user scrolls down, without needing to click a "next page" button.
+* **Sorting and Filtering:** The lists of videos can be sorted and filtered based on various criteria, including name, genre, IMDb rating, and production year.
+
+#### Watching a Video
+* **Video Page:** Clicking on a thumbnail takes the user to a detailed video page. This page includes the **integrated web player**, a summary of the video, cast information (producer, director, main actors), and its IMDb rating. 
+* **Streaming:** When the user clicks play, the app immediately initiates the BitTorrent download on the server. The video stream begins as soon as enough data is buffered to ensure uninterrupted playback. Any necessary video format conversion (e.g., from MKV to a browser-compatible format) is handled in the background.
+* **Subtitles:** If available, English subtitles are downloaded automatically. If the video's native language doesn't match the user's preferred language, and subtitles for that language are available, they are also downloaded and made selectable in the player.
+* **Commenting:** Users can leave comments on the video, and a list of all previous comments is displayed below the video player.
+
+***
+
+### What Are the Patterns Behind the App?
+
+The application's architecture is built on several key design patterns to ensure scalability, responsiveness, and a smooth user experience.
+
+#### Front-End Patterns
+* **Single-Page Application (SPA):** The front-end is likely an SPA, built with a framework like React, Vue.js, or Angular. This design provides a **fluid and fast user experience** by loading new content dynamically without full-page reloads.
+* **Infinite Scrolling:** This is a key UI pattern for the video lists. Instead of traditional numbered pagination, it enhances usability by continuously loading content as the user scrolls, minimizing clicks and page loads.
+* **Asynchronous Loading:** All interactions—from search queries to loading more video thumbnails—are handled asynchronously using AJAX requests. This prevents the user interface from freezing and ensures a responsive experience.
+
+#### Back-End Patterns
+* **Microservices Architecture:** The application's core functions (User Management, Search/Library, Video Streaming, and the API) are decoupled into distinct services. This approach allows for independent scaling and development of each component. For example, the BitTorrent streaming service can be scaled up during peak usage without affecting the user authentication service.
+* **RESTful API:** The app exposes a RESTful API for all its functionality. This pattern provides a **standardized, stateless, and scalable way** for the front-end to communicate with the back-end. The use of OAuth2 for authentication ensures secure access to user data.
+* **Worker/Queue Pattern:** The video downloading and conversion processes are performed in a non-blocking, background manner. When a user requests to watch a video, the server adds a task to a **job queue**. A dedicated **worker service** then picks up this task and handles the torrent download, initial buffering, and format conversion. This offloads resource-intensive tasks from the main server process, keeping the application responsive.
+* **Content-Based Caching:** To avoid redundant downloads, the server caches videos that have been fully downloaded. A TTL (Time-To-Live) of one month is set for unwatched videos. This simple **caching strategy** optimizes server storage and reduces re-download times for popular content.
+* **Proxy Pattern:** The server acts as a proxy between the user's web player and the BitTorrent network. Instead of the user's browser directly downloading from the torrent swarm (which is not possible), the server handles the BitTorrent protocol and streams the data directly to the user's browser via a standard HTTP connection. This **decoupling** simplifies the client-side implementation and manages the complexities of the BitTorrent protocol on the server.
+
+** initial technologies: Vue with Nuxt, Spring Boot Cloud, RabbitMQ, Redis, postgres
