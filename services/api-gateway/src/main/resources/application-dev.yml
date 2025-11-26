@@ -1,0 +1,32 @@
+# Development profile overrides
+# Usage: Set SPRING_PROFILES_ACTIVE=dev
+
+logging:
+  level:
+    # DEVELOPMENT ONLY: Verbose logging for debugging
+    # WARNING: Do NOT use in production - exposes sensitive information and impacts performance
+    root: INFO
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.security: DEBUG
+    com.hypertube: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.cloud.gateway.filter.ratelimit: DEBUG
+    io.jsonwebtoken: DEBUG
+
+# Development-friendly actuator settings
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"  # Expose all endpoints in dev
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+
+# Development Redis settings (if using local Redis without password)
+spring:
+  data:
+    redis:
+      password: ${REDIS_PASSWORD:}  # Allow empty password in dev only

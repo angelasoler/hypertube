@@ -15,9 +15,12 @@ eureka:
     service-url:
       defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
   server:
-    # Disable self-preservation mode in development
-    enable-self-preservation: false
-    eviction-interval-timer-in-ms: 4000
+    # PRODUCTION: Self-preservation enabled by default for production stability
+    # This prevents mass instance de-registration during network issues
+    # Only disabled in development profile for faster feedback
+    enable-self-preservation: true
+    eviction-interval-timer-in-ms: 60000  # Production default: 60 seconds
+    renewal-percent-threshold: 0.85       # Threshold for self-preservation mode
 
 # Actuator endpoints
 management:

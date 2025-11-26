@@ -20,7 +20,18 @@ import java.util.List;
  * - JWT authentication
  * - CORS configuration
  * - Public vs protected endpoints
- * - CSRF protection
+ * - CSRF protection (disabled for stateless JWT API - see CSRF_PROTECTION.md)
+ *
+ * CSRF Protection Decision:
+ * CSRF is DISABLED because this is a stateless API using JWT tokens in Authorization headers.
+ * CSRF attacks exploit automatic cookie inclusion by browsers. Since we:
+ * 1. Do NOT use cookies for authentication
+ * 2. Use JWT in Authorization headers (requires explicit JavaScript)
+ * 3. Implement CORS to restrict cross-origin requests
+ * 4. Validate JWT issuer and audience
+ *
+ * CSRF protection would provide no security benefit in this architecture.
+ * See /CSRF_PROTECTION.md for detailed analysis and review criteria.
  */
 @Configuration
 @EnableWebFluxSecurity
@@ -29,7 +40,9 @@ public class SecurityConfig {
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
         return http
-            .csrf(ServerHttpSecurity.CsrfSpec::disable) // Disabled for stateless API
+            // CSRF disabled - stateless API with JWT in headers (not cookies)
+            // See CSRF_PROTECTION.md for detailed justification
+            .csrf(ServerHttpSecurity.CsrfSpec::disable)
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeExchange(exchanges -> exchanges
                 // Public endpoints - no authentication required

@@ -4,9 +4,11 @@ services:
     image: postgres:15-alpine
     container_name: hypertube-postgres
     environment:
+      # SECURITY: DB_PASSWORD must be set via environment variable
+      # No default password for security - application will fail if not set
       POSTGRES_DB: ${DB_NAME:-hypertube}
       POSTGRES_USER: ${DB_USER:-hypertube_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-hypertube_password}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -23,6 +25,8 @@ services:
   redis:
     image: redis:7-alpine
     container_name: hypertube-redis
+    command: >
+      sh -c "redis-server --requirepass ${REDIS_PASSWORD}"
     ports:
       - "6379:6379"
     volumes:
@@ -30,7 +34,7 @@ services:
     networks:
       - hypertube-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -39,8 +43,10 @@ services:
     image: rabbitmq:3.12-management-alpine
     container_name: hypertube-rabbitmq
     environment:
+      # SECURITY: RABBITMQ_PASSWORD must be set via environment variable
+      # No default password for security - application will fail if not set
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-hypertube}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-hypertube_password}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     ports:
       - "5672:5672"   # AMQP port
       - "15672:15672" # Management UI
@@ -103,7 +109,7 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hypertube}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-hypertube_user}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-hypertube_password}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       JWT_SECRET: ${JWT_SECRET}
       OAUTH_42_CLIENT_ID: ${OAUTH_42_CLIENT_ID}
@@ -134,10 +140,10 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hypertube}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-hypertube_user}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-hypertube_password}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       SPRING_REDIS_HOST: redis
       SPRING_REDIS_PORT: 6379
-      SPRING_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SPRING_REDIS_PASSWORD: ${REDIS_PASSWORD}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       YTS_API_URL: ${YTS_API_URL}
       EZTV_API_URL: ${EZTV_API_URL}
@@ -167,11 +173,11 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hypertube}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-hypertube_user}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-hypertube_password}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-hypertube}
-      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-hypertube_password}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       VIDEO_CACHE_PATH: ${VIDEO_CACHE_PATH:-/var/hypertube/videos}
       SUBTITLE_CACHE_PATH: ${SUBTITLE_CACHE_PATH:-/var/hypertube/subtitles}
@@ -202,11 +208,11 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hypertube}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-hypertube_user}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-hypertube_password}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-hypertube}
-      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-hypertube_password}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       VIDEO_CACHE_PATH: ${VIDEO_CACHE_PATH:-/var/hypertube/videos}
       SUBTITLE_CACHE_PATH: ${SUBTITLE_CACHE_PATH:-/var/hypertube/subtitles}
       OPENSUBTITLES_API_KEY: ${OPENSUBTITLES_API_KEY}
@@ -237,7 +243,7 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hypertube}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-hypertube_user}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-hypertube_password}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     depends_on:
       postgres:

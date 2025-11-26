@@ -1,0 +1,16 @@
+# Development profile overrides
+# Usage: Set SPRING_PROFILES_ACTIVE=dev
+
+eureka:
+  server:
+    # DEVELOPMENT ONLY: Disable self-preservation for faster feedback
+    # Services are evicted immediately when they stop sending heartbeats
+    # WARNING: Do NOT use in production - can cause service de-registration during network issues
+    enable-self-preservation: false
+    eviction-interval-timer-in-ms: 4000  # Check every 4 seconds (faster eviction)
+
+logging:
+  level:
+    com.netflix.eureka: DEBUG
+    com.netflix.discovery: DEBUG
+    root: DEBUG
