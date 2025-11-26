@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: eureka-server
+
+server:
+  port: ${EUREKA_SERVER_PORT:8761}
+
+eureka:
+  instance:
+    hostname: localhost
+  client:
+    # Don't register itself as a client
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+  server:
+    # PRODUCTION: Self-preservation enabled by default for production stability
+    # This prevents mass instance de-registration during network issues
+    # Only disabled in development profile for faster feedback
+    enable-self-preservation: true
+    eviction-interval-timer-in-ms: 60000  # Production default: 60 seconds
+    renewal-percent-threshold: 0.85       # Threshold for self-preservation mode
+
+# Actuator endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.netflix.eureka: INFO
+    com.netflix.discovery: INFO

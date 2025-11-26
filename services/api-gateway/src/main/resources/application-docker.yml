@@ -1,0 +1,20 @@
+eureka:
+  instance:
+    hostname: api-gateway
+    prefer-ip-address: true
+
+spring:
+  data:
+    redis:
+      host: redis
+      port: 6379
+      # Password required - no default in Docker profile
+      password: ${REDIS_PASSWORD}
+
+logging:
+  level:
+    # Production-like logging in Docker profile
+    root: INFO
+    org.springframework.security: INFO
+    org.springframework.cloud.gateway: INFO
+    com.hypertube: INFO
