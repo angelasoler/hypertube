@@ -105,6 +105,9 @@ management:
   endpoint:
     health:
       show-details: always
+  health:
+    mail:
+      enabled: false # Disable mail health check (requires valid SMTP config)
 
 logging:
   level:
