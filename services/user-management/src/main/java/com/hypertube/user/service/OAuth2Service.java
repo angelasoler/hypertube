@@ -10,9 +10,6 @@ import com.hypertube.user.repository.UserRepository;
 import com.hypertube.user.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
-import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,7 +30,6 @@ public class OAuth2Service {
     private final OAuthAccountRepository oauthAccountRepository;
     private final UserMapper userMapper;
     private final JwtUtil jwtUtil;
-    private final OAuth2AuthorizedClientService authorizedClientService;
 
     /**
      * Processes OAuth2 login/registration callback

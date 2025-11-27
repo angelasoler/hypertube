@@ -27,7 +27,7 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf.disable()) // Stateless JWT API
             .sessionManagement(session ->
-                session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED) // OAuth2 needs sessions
+                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             )
             .authorizeHttpRequests(auth -> auth
                 // Public endpoints
@@ -42,11 +42,6 @@ public class SecurityConfig {
                 // Protected endpoints (authentication handled by API Gateway)
                 .requestMatchers("/api/users/**").authenticated()
                 .anyRequest().authenticated()
-            )
-            .oauth2Login(oauth2 -> oauth2
-                // OAuth2 login configuration
-                .defaultSuccessUrl("/api/oauth2/callback/success", true)
-                .failureUrl("/api/oauth2/callback/failure")
             );
 
         return http.build();
