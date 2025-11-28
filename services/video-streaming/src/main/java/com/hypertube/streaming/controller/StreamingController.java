@@ -1,14 +1,22 @@
 package com.hypertube.streaming.controller;
 
 import com.hypertube.streaming.dto.DownloadJobDTO;
+import com.hypertube.streaming.dto.DownloadMessage;
 import com.hypertube.streaming.entity.DownloadJob;
 import com.hypertube.streaming.repository.DownloadJobRepository;
+import com.hypertube.streaming.repository.VideoTorrentRepository;
+import com.hypertube.streaming.service.TorrentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -19,6 +27,12 @@ import java.util.stream.Collectors;
 public class StreamingController {
 
     private final DownloadJobRepository downloadJobRepository;
+    private final VideoTorrentRepository videoTorrentRepository;
+    private final TorrentService torrentService;
+    private final RabbitTemplate rabbitTemplate;
+
+    @Value("${rabbitmq.queues.download}")
+    private String downloadQueue;
 
     @GetMapping("/jobs")
     public ResponseEntity<List<DownloadJobDTO>> getAllJobs() {
@@ -44,6 +58,94 @@ public class StreamingController {
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(jobDTOs);
+    }
+
+    /**
+     * Initiates a video download job.
+     */
+    @PostMapping("/download")
+    public ResponseEntity<DownloadJobDTO> initiateDownload(@RequestBody DownloadMessage request) {
+        try {
+            log.info("Initiating download for video: {}, torrent: {}",
+                    request.getVideoId(), request.getTorrentId());
+
+            // Create download job
+            DownloadJob job = new DownloadJob();
+            job.setVideoId(request.getVideoId());
+            job.setTorrentId(request.getTorrentId());
+            job.setUserId(request.getUserId());
+            job.setStatus(DownloadJob.DownloadStatus.PENDING);
+            job.setProgress(0);
+            job.setCreatedAt(LocalDateTime.now());
+            job.setUpdatedAt(LocalDateTime.now());
+
+            job = downloadJobRepository.save(job);
+
+            // Send message to download queue
+            DownloadMessage message = DownloadMessage.builder()
+                    .jobId(job.getId())
+                    .videoId(request.getVideoId())
+                    .torrentId(request.getTorrentId())
+                    .userId(request.getUserId())
+                    .magnetLink(request.getMagnetLink())
+                    .torrentUrl(request.getTorrentUrl())
+                    .build();
+
+            rabbitTemplate.convertAndSend(downloadQueue, message);
+
+            log.info("Download job created: {}", job.getId());
+
+            return ResponseEntity.ok(mapToDTO(job));
+
+        } catch (Exception e) {
+            log.error("Error initiating download", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Checks if a download job is ready for streaming (buffer threshold reached).
+     */
+    @GetMapping("/jobs/{jobId}/ready")
+    public ResponseEntity<Map<String, Object>> checkStreamingReadiness(@PathVariable UUID jobId) {
+        try {
+            DownloadJob job = downloadJobRepository.findById(jobId)
+                    .orElse(null);
+
+            if (job == null) {
+                return ResponseEntity.notFound().build();
+            }
+
+            boolean isReady = torrentService.isReadyForStreaming(jobId);
+            String filePath = torrentService.getFilePath(jobId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("jobId", jobId);
+            response.put("ready", isReady);
+            response.put("status", job.getStatus());
+            response.put("progress", job.getProgress());
+            response.put("filePath", filePath);
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("Error checking streaming readiness for job: {}", jobId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Cancels a download job.
+     */
+    @DeleteMapping("/jobs/{jobId}")
+    public ResponseEntity<Void> cancelDownload(@PathVariable UUID jobId) {
+        try {
+            torrentService.cancelDownload(jobId);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            log.error("Error cancelling download for job: {}", jobId, e);
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
     @GetMapping("/health")
