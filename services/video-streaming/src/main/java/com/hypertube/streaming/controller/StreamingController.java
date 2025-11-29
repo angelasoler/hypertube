@@ -6,10 +6,13 @@ import com.hypertube.streaming.entity.DownloadJob;
 import com.hypertube.streaming.repository.DownloadJobRepository;
 import com.hypertube.streaming.repository.VideoTorrentRepository;
 import com.hypertube.streaming.service.TorrentService;
+import com.hypertube.streaming.service.VideoStreamingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -29,6 +32,7 @@ public class StreamingController {
     private final DownloadJobRepository downloadJobRepository;
     private final VideoTorrentRepository videoTorrentRepository;
     private final TorrentService torrentService;
+    private final VideoStreamingService videoStreamingService;
     private final RabbitTemplate rabbitTemplate;
 
     @Value("${rabbitmq.queues.download}")
@@ -146,6 +150,29 @@ public class StreamingController {
             log.error("Error cancelling download for job: {}", jobId, e);
             return ResponseEntity.internalServerError().build();
         }
+    }
+
+    /**
+     * Streams a video with HTTP Range request support (RFC 7233).
+     *
+     * Supports:
+     * - Full file streaming (no Range header)
+     * - Partial content streaming (Range header present)
+     * - Video seeking during active downloads
+     * - Progressive playback in browsers
+     *
+     * @param jobId The download job ID
+     * @param rangeHeader Optional Range header for partial content requests
+     * @return Video content with appropriate status code (200 or 206)
+     */
+    @GetMapping("/video/{jobId}")
+    public ResponseEntity<Resource> streamVideo(
+            @PathVariable UUID jobId,
+            @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
+
+        log.info("Streaming video for job: {} (Range: {})", jobId, rangeHeader != null ? rangeHeader : "none");
+
+        return videoStreamingService.streamVideo(jobId, rangeHeader);
     }
 
     @GetMapping("/health")
