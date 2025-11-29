@@ -6,6 +6,7 @@ import com.hypertube.streaming.entity.DownloadJob;
 import com.hypertube.streaming.entity.Subtitle;
 import com.hypertube.streaming.repository.DownloadJobRepository;
 import com.hypertube.streaming.repository.VideoTorrentRepository;
+import com.hypertube.streaming.service.CacheManagementService;
 import com.hypertube.streaming.service.SubtitleService;
 import com.hypertube.streaming.service.TorrentService;
 import com.hypertube.streaming.service.VideoStreamingService;
@@ -40,6 +41,7 @@ public class StreamingController {
     private final TorrentService torrentService;
     private final VideoStreamingService videoStreamingService;
     private final SubtitleService subtitleService;
+    private final CacheManagementService cacheManagementService;
     private final RabbitTemplate rabbitTemplate;
 
     @Value("${rabbitmq.queues.download}")
@@ -254,6 +256,69 @@ public class StreamingController {
         } catch (Exception e) {
             log.error("Error serving subtitle for video: {}, language: {}", videoId, languageCode, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    /**
+     * Gets cache statistics (storage usage, cached videos count, etc.).
+     *
+     * @return Cache statistics including total storage, used space, and video count
+     */
+    @GetMapping("/cache/stats")
+    public ResponseEntity<Map<String, Object>> getCacheStats() {
+        try {
+            Map<String, Object> stats = cacheManagementService.getCacheStatistics();
+            return ResponseEntity.ok(stats);
+        } catch (Exception e) {
+            log.error("Error getting cache statistics", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Manually triggers cache cleanup to remove expired videos.
+     *
+     * @return Number of videos cleaned up
+     */
+    @PostMapping("/cache/cleanup")
+    public ResponseEntity<Map<String, Object>> manualCleanup() {
+        try {
+            int cleanedCount = cacheManagementService.manualCleanup();
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("cleanedCount", cleanedCount);
+            response.put("message", "Cleanup completed successfully");
+
+            log.info("Manual cleanup completed: {} videos removed", cleanedCount);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Error during manual cleanup", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Clears all cached videos (admin function).
+     * WARNING: This will remove all cached videos from the system.
+     *
+     * @return Number of videos cleared
+     */
+    @DeleteMapping("/cache/clear")
+    public ResponseEntity<Map<String, Object>> clearCache() {
+        try {
+            int clearedCount = cacheManagementService.clearAllCache();
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("clearedCount", clearedCount);
+            response.put("message", "Cache cleared successfully");
+
+            log.warn("Cache cleared: {} videos removed", clearedCount);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Error clearing cache", e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 
