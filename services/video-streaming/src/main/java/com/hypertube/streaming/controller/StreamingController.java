@@ -1,0 +1,200 @@
+package com.hypertube.streaming.controller;
+
+import com.hypertube.streaming.dto.DownloadJobDTO;
+import com.hypertube.streaming.dto.DownloadMessage;
+import com.hypertube.streaming.entity.DownloadJob;
+import com.hypertube.streaming.repository.DownloadJobRepository;
+import com.hypertube.streaming.repository.VideoTorrentRepository;
+import com.hypertube.streaming.service.TorrentService;
+import com.hypertube.streaming.service.VideoStreamingService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@RestController
+@RequestMapping("/api/streaming")
+@RequiredArgsConstructor
+@Slf4j
+public class StreamingController {
+
+    private final DownloadJobRepository downloadJobRepository;
+    private final VideoTorrentRepository videoTorrentRepository;
+    private final TorrentService torrentService;
+    private final VideoStreamingService videoStreamingService;
+    private final RabbitTemplate rabbitTemplate;
+
+    @Value("${rabbitmq.queues.download}")
+    private String downloadQueue;
+
+    @GetMapping("/jobs")
+    public ResponseEntity<List<DownloadJobDTO>> getAllJobs() {
+        List<DownloadJob> jobs = downloadJobRepository.findAll();
+        List<DownloadJobDTO> jobDTOs = jobs.stream()
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(jobDTOs);
+    }
+
+    @GetMapping("/jobs/{jobId}")
+    public ResponseEntity<DownloadJobDTO> getJob(@PathVariable UUID jobId) {
+        return downloadJobRepository.findById(jobId)
+                .map(this::mapToDTO)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/jobs/user/{userId}")
+    public ResponseEntity<List<DownloadJobDTO>> getUserJobs(@PathVariable UUID userId) {
+        List<DownloadJob> jobs = downloadJobRepository.findByUserId(userId);
+        List<DownloadJobDTO> jobDTOs = jobs.stream()
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(jobDTOs);
+    }
+
+    /**
+     * Initiates a video download job.
+     */
+    @PostMapping("/download")
+    public ResponseEntity<DownloadJobDTO> initiateDownload(@RequestBody DownloadMessage request) {
+        try {
+            log.info("Initiating download for video: {}, torrent: {}",
+                    request.getVideoId(), request.getTorrentId());
+
+            // Create download job
+            DownloadJob job = new DownloadJob();
+            job.setVideoId(request.getVideoId());
+            job.setTorrentId(request.getTorrentId());
+            job.setUserId(request.getUserId());
+            job.setStatus(DownloadJob.DownloadStatus.PENDING);
+            job.setProgress(0);
+            job.setCreatedAt(LocalDateTime.now());
+            job.setUpdatedAt(LocalDateTime.now());
+
+            job = downloadJobRepository.save(job);
+
+            // Send message to download queue
+            DownloadMessage message = DownloadMessage.builder()
+                    .jobId(job.getId())
+                    .videoId(request.getVideoId())
+                    .torrentId(request.getTorrentId())
+                    .userId(request.getUserId())
+                    .magnetLink(request.getMagnetLink())
+                    .torrentUrl(request.getTorrentUrl())
+                    .build();
+
+            rabbitTemplate.convertAndSend(downloadQueue, message);
+
+            log.info("Download job created: {}", job.getId());
+
+            return ResponseEntity.ok(mapToDTO(job));
+
+        } catch (Exception e) {
+            log.error("Error initiating download", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Checks if a download job is ready for streaming (buffer threshold reached).
+     */
+    @GetMapping("/jobs/{jobId}/ready")
+    public ResponseEntity<Map<String, Object>> checkStreamingReadiness(@PathVariable UUID jobId) {
+        try {
+            DownloadJob job = downloadJobRepository.findById(jobId)
+                    .orElse(null);
+
+            if (job == null) {
+                return ResponseEntity.notFound().build();
+            }
+
+            boolean isReady = torrentService.isReadyForStreaming(jobId);
+            String filePath = torrentService.getFilePath(jobId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("jobId", jobId);
+            response.put("ready", isReady);
+            response.put("status", job.getStatus());
+            response.put("progress", job.getProgress());
+            response.put("filePath", filePath);
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("Error checking streaming readiness for job: {}", jobId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Cancels a download job.
+     */
+    @DeleteMapping("/jobs/{jobId}")
+    public ResponseEntity<Void> cancelDownload(@PathVariable UUID jobId) {
+        try {
+            torrentService.cancelDownload(jobId);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            log.error("Error cancelling download for job: {}", jobId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Streams a video with HTTP Range request support (RFC 7233).
+     *
+     * Supports:
+     * - Full file streaming (no Range header)
+     * - Partial content streaming (Range header present)
+     * - Video seeking during active downloads
+     * - Progressive playback in browsers
+     *
+     * @param jobId The download job ID
+     * @param rangeHeader Optional Range header for partial content requests
+     * @return Video content with appropriate status code (200 or 206)
+     */
+    @GetMapping("/video/{jobId}")
+    public ResponseEntity<Resource> streamVideo(
+            @PathVariable UUID jobId,
+            @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
+
+        log.info("Streaming video for job: {} (Range: {})", jobId, rangeHeader != null ? rangeHeader : "none");
+
+        return videoStreamingService.streamVideo(jobId, rangeHeader);
+    }
+
+    @GetMapping("/health")
+    public ResponseEntity<String> health() {
+        return ResponseEntity.ok("Streaming service is running");
+    }
+
+    private DownloadJobDTO mapToDTO(DownloadJob job) {
+        return DownloadJobDTO.builder()
+                .id(job.getId())
+                .videoId(job.getVideoId())
+                .torrentId(job.getTorrentId())
+                .userId(job.getUserId())
+                .status(job.getStatus())
+                .progress(job.getProgress())
+                .downloadSpeed(job.getDownloadSpeed())
+                .etaSeconds(job.getEtaSeconds())
+                .filePath(job.getFilePath())
+                .errorMessage(job.getErrorMessage())
+                .createdAt(job.getCreatedAt())
+                .startedAt(job.getStartedAt())
+                .completedAt(job.getCompletedAt())
+                .build();
+    }
+}
