@@ -3,19 +3,25 @@ package com.hypertube.streaming.controller;
 import com.hypertube.streaming.dto.DownloadJobDTO;
 import com.hypertube.streaming.dto.DownloadMessage;
 import com.hypertube.streaming.entity.DownloadJob;
+import com.hypertube.streaming.entity.Subtitle;
 import com.hypertube.streaming.repository.DownloadJobRepository;
 import com.hypertube.streaming.repository.VideoTorrentRepository;
+import com.hypertube.streaming.service.SubtitleService;
 import com.hypertube.streaming.service.TorrentService;
 import com.hypertube.streaming.service.VideoStreamingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.File;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -33,6 +39,7 @@ public class StreamingController {
     private final VideoTorrentRepository videoTorrentRepository;
     private final TorrentService torrentService;
     private final VideoStreamingService videoStreamingService;
+    private final SubtitleService subtitleService;
     private final RabbitTemplate rabbitTemplate;
 
     @Value("${rabbitmq.queues.download}")
@@ -173,6 +180,81 @@ public class StreamingController {
         log.info("Streaming video for job: {} (Range: {})", jobId, rangeHeader != null ? rangeHeader : "none");
 
         return videoStreamingService.streamVideo(jobId, rangeHeader);
+    }
+
+    /**
+     * Gets all subtitles for a video.
+     *
+     * @param videoId The video ID
+     * @return List of available subtitles with their languages
+     */
+    @GetMapping("/subtitles/{videoId}")
+    public ResponseEntity<List<Map<String, Object>>> getSubtitles(@PathVariable UUID videoId) {
+        try {
+            List<Subtitle> subtitles = subtitleService.getSubtitlesForVideo(videoId);
+
+            List<Map<String, Object>> response = subtitles.stream()
+                    .map(subtitle -> {
+                        Map<String, Object> subtitleInfo = new HashMap<>();
+                        subtitleInfo.put("id", subtitle.getId());
+                        subtitleInfo.put("languageCode", subtitle.getLanguageCode());
+                        subtitleInfo.put("format", subtitle.getFormat());
+                        subtitleInfo.put("available", subtitleService.isValidSubtitleFile(subtitle.getFilePath()));
+                        return subtitleInfo;
+                    })
+                    .collect(Collectors.toList());
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("Error getting subtitles for video: {}", videoId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Streams a subtitle file for a video.
+     *
+     * @param videoId The video ID
+     * @param languageCode The language code (e.g., "en", "pt", "es")
+     * @return The subtitle file in WebVTT format
+     */
+    @GetMapping("/subtitles/{videoId}/{languageCode}")
+    public ResponseEntity<Resource> getSubtitleFile(
+            @PathVariable UUID videoId,
+            @PathVariable String languageCode) {
+
+        try {
+            Subtitle subtitle = subtitleService.getSubtitleByLanguage(videoId, languageCode);
+
+            if (subtitle == null) {
+                log.warn("Subtitle not found for video: {}, language: {}", videoId, languageCode);
+                return ResponseEntity.notFound().build();
+            }
+
+            File subtitleFile = new File(subtitle.getFilePath());
+            if (!subtitleFile.exists()) {
+                log.error("Subtitle file not found: {}", subtitle.getFilePath());
+                return ResponseEntity.notFound().build();
+            }
+
+            Resource resource = new FileSystemResource(subtitleFile);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.parseMediaType("text/vtt"));
+            headers.setContentLength(subtitleFile.length());
+            headers.set(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate");
+
+            log.info("Serving subtitle for video: {}, language: {}", videoId, languageCode);
+
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .body(resource);
+
+        } catch (Exception e) {
+            log.error("Error serving subtitle for video: {}, language: {}", videoId, languageCode, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
 
     @GetMapping("/health")
