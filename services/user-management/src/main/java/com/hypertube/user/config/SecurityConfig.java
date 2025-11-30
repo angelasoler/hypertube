@@ -33,6 +33,7 @@ public class SecurityConfig {
                 // Public endpoints
                 .requestMatchers(
                     "/api/auth/**",
+                    "/api/v1/auth/**",  // API Gateway uses v1 prefix
                     "/api/oauth2/**",
                     "/oauth2/**",
                     "/login/oauth2/**",
@@ -40,7 +41,7 @@ public class SecurityConfig {
                     "/actuator/info"
                 ).permitAll()
                 // Protected endpoints (authentication handled by API Gateway)
-                .requestMatchers("/api/users/**").authenticated()
+                .requestMatchers("/api/users/**", "/api/v1/users/**").authenticated()
                 .anyRequest().authenticated()
             );
 
