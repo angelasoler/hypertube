@@ -54,6 +54,34 @@ export const useApi = () => {
   }
 
   return {
+    // Generic HTTP methods
+    get: <T>(endpoint: string, options: { params?: Record<string, any> } = {}) => {
+      const url = new URL(`${apiBase}${endpoint}`, window.location.origin)
+      if (options.params) {
+        Object.entries(options.params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            url.searchParams.append(key, String(value))
+          }
+        })
+      }
+      return handleRequest<T>(url.pathname + url.search, { method: 'GET' })
+    },
+
+    post: <T>(endpoint: string, data?: any) =>
+      handleRequest<T>(endpoint, {
+        method: 'POST',
+        body: data ? JSON.stringify(data) : undefined,
+      }),
+
+    put: <T>(endpoint: string, data?: any) =>
+      handleRequest<T>(endpoint, {
+        method: 'PUT',
+        body: data ? JSON.stringify(data) : undefined,
+      }),
+
+    delete: <T>(endpoint: string) =>
+      handleRequest<T>(endpoint, { method: 'DELETE' }),
+
     // Auth endpoints
     auth: {
       login: (data: LoginRequest) =>

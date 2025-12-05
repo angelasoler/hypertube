@@ -19,9 +19,9 @@
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
       <div class="card">
         <h3 class="text-xl font-semibold mb-2">🎬 Browse Videos</h3>
-        <p class="text-gray-400 mb-4">Explore our video library</p>
-        <NuxtLink to="/videos" class="btn btn-secondary btn-sm">
-          Go to Videos →
+        <p class="text-gray-400 mb-4">Search, filter, and explore our video library</p>
+        <NuxtLink to="/browse" class="btn btn-secondary btn-sm">
+          Browse Library →
         </NuxtLink>
       </div>
 
