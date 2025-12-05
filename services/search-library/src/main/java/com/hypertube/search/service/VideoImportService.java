@@ -39,7 +39,6 @@ public class VideoImportService {
      * @param numPages Number of pages to import (each page has ~20 movies)
      * @return Number of movies imported
      */
-    @Async
     @Transactional
     public int importPopularMoviesFromYts(int numPages) {
         log.info("Starting import of {} pages of popular movies from YTS", numPages);
