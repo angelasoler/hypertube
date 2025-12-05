@@ -182,19 +182,16 @@ public class VideoImportService {
                     return genreRepository.save(newGenre);
                 });
 
-            // Create video-genre association
-            VideoGenre videoGenre = new VideoGenre();
-            VideoGenre.VideoGenreId id = new VideoGenre.VideoGenreId();
-            id.setVideoId(video.getId());
-            id.setGenreId(genre.getId());
-            videoGenre.setId(id);
-            videoGenre.setVideo(video);
-            videoGenre.setGenre(genre);
+            // Create video-genre association using builder
+            VideoGenre videoGenre = VideoGenre.builder()
+                .video(video)
+                .genre(genre)
+                .build();
 
-            if (video.getGenres() == null) {
-                video.setGenres(new HashSet<>());
+            if (video.getVideoGenres() == null) {
+                video.setVideoGenres(new HashSet<>());
             }
-            video.getGenres().add(videoGenre);
+            video.getVideoGenres().add(videoGenre);
         }
 
         videoRepository.save(video);
