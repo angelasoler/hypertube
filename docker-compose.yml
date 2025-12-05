@@ -89,8 +89,13 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       JWT_SECRET: ${JWT_SECRET}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     depends_on:
       eureka-server:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - hypertube-network
@@ -141,9 +146,9 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hypertube}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-hypertube_user}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
-      SPRING_REDIS_HOST: redis
-      SPRING_REDIS_PORT: 6379
-      SPRING_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       YTS_API_URL: ${YTS_API_URL}
       EZTV_API_URL: ${EZTV_API_URL}
@@ -169,24 +174,32 @@ services:
       context: ./services/video-streaming
       dockerfile: Dockerfile
     container_name: hypertube-streaming-service
+    ports:
+      - "8083:8083"
     environment:
       SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hypertube}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-hypertube_user}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-hypertube}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      VIDEO_CACHE_PATH: ${VIDEO_CACHE_PATH:-/var/hypertube/videos}
-      SUBTITLE_CACHE_PATH: ${SUBTITLE_CACHE_PATH:-/var/hypertube/subtitles}
+      STREAMING_STORAGE_BASE_PATH: /var/hypertube/videos
+      STREAMING_STORAGE_SUBTITLE_PATH: /var/hypertube/subtitles
+      STREAMING_TORRENT_DOWNLOAD_PATH: /tmp/hypertube/downloads
       OPENSUBTITLES_API_KEY: ${OPENSUBTITLES_API_KEY}
     volumes:
       - video_cache:/var/hypertube/videos
       - subtitle_cache:/var/hypertube/subtitles
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
@@ -267,17 +280,15 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NUXT_PUBLIC_API_URL: http://api-gateway:8080
-    depends_on:
-      api-gateway:
-        condition: service_healthy
+      NUXT_PUBLIC_API_BASE: http://localhost:8080
     networks:
       - hypertube-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 60s
 
 volumes:
   postgres_data:
