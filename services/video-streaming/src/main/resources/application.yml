@@ -1,0 +1,168 @@
+spring:
+  application:
+    name: video-streaming-service
+
+  # Database configuration
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/hypertube}
+    username: ${SPRING_DATASOURCE_USERNAME:hypertube_user}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 20000
+
+  # JPA configuration
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        use_sql_comments: false
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+    show-sql: false
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 2
+    locations: classpath:db/migration
+    validate-on-migrate: false
+
+  # Redis configuration for caching
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+
+  # RabbitMQ configuration
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        concurrency: 3
+        max-concurrency: 10
+        prefetch: 1
+        acknowledge-mode: auto
+        retry:
+          enabled: true
+          initial-interval: 3000
+          max-attempts: 3
+          multiplier: 2
+
+  # Cache configuration
+  cache:
+    type: redis
+    redis:
+      time-to-live: 3600000 # 1 hour default TTL
+
+  # Servlet configuration for large file uploads/downloads
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 10GB
+      max-request-size: 10GB
+
+server:
+  port: ${STREAMING_SERVICE_PORT:8083}
+  tomcat:
+    max-swallow-size: -1 # Disable limit for streaming large files
+    max-http-form-post-size: -1
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
+    fetch-registry: true
+    register-with-eureka: true
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}
+
+# Actuator endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  health:
+    rabbitmq:
+      enabled: true
+    redis:
+      enabled: true
+
+# Video streaming configuration
+streaming:
+  # Storage configuration
+  storage:
+    base-path: ${STORAGE_BASE_PATH:/tmp/hypertube/videos}
+    temp-path: ${STORAGE_TEMP_PATH:/tmp/hypertube/temp}
+    subtitle-path: ${STORAGE_SUBTITLE_PATH:/tmp/hypertube/subtitles}
+    max-cache-size-gb: ${MAX_CACHE_SIZE_GB:100}
+
+  # Torrent configuration
+  torrent:
+    download-path: ${TORRENT_DOWNLOAD_PATH:/tmp/hypertube/downloads}
+    max-download-speed: ${MAX_DOWNLOAD_SPEED:-1} # -1 for unlimited, otherwise KB/s
+    max-upload-speed: ${MAX_UPLOAD_SPEED:100} # KB/s
+    max-connections: ${MAX_CONNECTIONS:200}
+    dht-enabled: true
+    port-range-start: 6881
+    port-range-end: 6889
+
+  # Video conversion configuration
+  conversion:
+    enabled: ${CONVERSION_ENABLED:true}
+    target-format: mp4
+    target-codec: h264
+    ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
+    ffprobe-path: ${FFPROBE_PATH:ffprobe}
+
+  # Cache TTL configuration
+  cache:
+    ttl-days: 30
+    cleanup-interval-hours: 6
+
+  # Subtitle configuration
+  subtitle:
+    enabled: true
+    auto-download-languages: en
+    opensubtitles-api-key: ${OPENSUBTITLES_API_KEY:}
+
+# RabbitMQ Queue names
+rabbitmq:
+  queues:
+    download: video.download.queue
+    conversion: video.conversion.queue
+    subtitle: subtitle.download.queue
+  exchanges:
+    video: video.exchange
+  routing-keys:
+    download: video.download
+    conversion: video.conversion
+    subtitle: subtitle.download
+
+logging:
+  level:
+    com.hypertube.streaming: DEBUG
+    org.springframework.amqp: INFO
+    org.libtorrent4j: INFO
