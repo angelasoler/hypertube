@@ -129,8 +129,12 @@ public class StreamingController {
                 return ResponseEntity.notFound().build();
             }
 
-            boolean isReady = torrentService.isReadyForStreaming(jobId);
-            String filePath = torrentService.getFilePath(jobId);
+            // Check if job is ready for streaming
+            // If status is COMPLETED and filePath exists, it's ready
+            boolean isReady = (job.getStatus() == DownloadJob.DownloadStatus.COMPLETED && job.getFilePath() != null)
+                    || torrentService.isReadyForStreaming(jobId);
+
+            String filePath = job.getFilePath() != null ? job.getFilePath() : torrentService.getFilePath(jobId);
 
             Map<String, Object> response = new HashMap<>();
             response.put("jobId", jobId);
