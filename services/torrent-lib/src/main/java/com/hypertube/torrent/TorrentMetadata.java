@@ -248,4 +248,39 @@ public class TorrentMetadata {
             return value;
         }
     }
+
+    /**
+     * Get the SHA-1 hash for a specific piece
+     */
+    public byte[] getPieceHash(int pieceIndex) {
+        if (pieceIndex < 0 || pieceIndex >= numPieces) {
+            throw new IndexOutOfBoundsException("Invalid piece index: " + pieceIndex);
+        }
+
+        if (pieces == null) {
+            throw new IllegalStateException("Piece hashes not available (magnet link)");
+        }
+
+        byte[] hash = new byte[20];
+        System.arraycopy(pieces, pieceIndex * 20, hash, 0, 20);
+        return hash;
+    }
+
+    /**
+     * Get the length of a specific piece
+     * The last piece may be shorter than pieceLength
+     */
+    public int getPieceLength(int pieceIndex) {
+        if (pieceIndex < 0 || pieceIndex >= numPieces) {
+            throw new IndexOutOfBoundsException("Invalid piece index: " + pieceIndex);
+        }
+
+        // Last piece may be shorter
+        if (pieceIndex == numPieces - 1) {
+            long lastPieceLength = totalSize - (pieceIndex * pieceLength);
+            return (int) lastPieceLength;
+        }
+
+        return (int) pieceLength;
+    }
 }

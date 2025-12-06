@@ -11,13 +11,19 @@ A pure Java implementation of the BitTorrent protocol for video streaming.
 - **Info Hash Calculation**: SHA-1 based info hash for torrent identification
 - **Multi-tracker Support**: Handle announce-list for redundancy
 - **Compact & Dictionary Peer Format**: Support both peer list formats
+- **Peer Wire Protocol**: Complete message protocol implementation
+- **Peer Connection**: Handshake and bidirectional communication
+- **Piece Management**: Block-based downloading with SHA-1 verification
+- **Bitfield**: Piece availability tracking
+- **Download Manager**: Multi-peer download orchestration with sequential/rarest-first strategies
+- **Piece Selection Strategies**: Sequential (for streaming) and rarest-first modes
 
 ### 🚧 To Be Implemented
-- **Peer Wire Protocol**: Direct peer-to-peer communication
-- **Piece Manager**: Download orchestration and verification
 - **DHT Support**: Distributed Hash Table for trackerless torrents
 - **UDP Tracker Support**: Faster tracker protocol
 - **PEX (Peer Exchange)**: Peer discovery without trackers
+- **Upload/Seeding**: Upload blocks to other peers
+- **Choking Algorithm**: Optimistic unchoking and peer management
 
 ## Architecture
 
@@ -33,10 +39,18 @@ torrent-lib/
 │   ├── TrackerEvent
 │   ├── Peer
 │   └── TrackerException
-├── TorrentMetadata  # Torrent file/magnet parser
-├── peer/            # [TODO] Peer protocol
-├── piece/           # [TODO] Piece management
-└── manager/         # [TODO] Download orchestration
+├── peer/             # Peer wire protocol
+│   ├── PeerMessage   (Message encoding/decoding)
+│   ├── PeerConnection (Handshake & communication)
+│   └── PeerException
+├── piece/            # Piece & block management
+│   ├── Piece         (Block-based piece with verification)
+│   └── Bitfield      (Piece availability tracking)
+├── manager/          # Download orchestration
+│   ├── DownloadManager       (Multi-peer coordination)
+│   ├── PieceSelectionStrategy (Sequential/rarest-first)
+│   └── DownloadException
+└── TorrentMetadata  # Torrent file/magnet parser
 ```
 
 ## Usage
@@ -86,6 +100,96 @@ for (Peer peer : response.getPeers()) {
 }
 ```
 
+### Connect to Peer and Download
+
+```java
+// Get peers from tracker
+TrackerClient tracker = new TrackerClient(6881);
+TrackerResponse response = tracker.announce(metadata, TrackerEvent.STARTED, 0, 0, totalSize);
+
+// Connect to first peer
+Peer peer = response.getPeers().get(0);
+PeerConnection connection = new PeerConnection(
+    peer.getIp(),
+    peer.getPort(),
+    metadata.getInfoHash(),
+    tracker.getPeerId()
+);
+
+connection.connect(); // Performs handshake
+
+// Express interest
+connection.sendInterested();
+
+// Wait for unchoke
+PeerMessage msg = connection.receiveMessage();
+if (msg.getType() == PeerMessage.MessageType.UNCHOKE) {
+    // Request first block of first piece
+    connection.requestBlock(0, 0, 16384);
+
+    // Receive piece
+    msg = connection.receiveMessage();
+    if (msg.getType() == PeerMessage.MessageType.PIECE) {
+        PeerMessage.BlockInfo block = msg.getBlockInfo();
+        System.out.println("Downloaded block from piece " + block.getPieceIndex());
+    }
+}
+
+connection.close();
+```
+
+### Manage Pieces
+
+```java
+// Create piece with expected hash
+byte[] expectedHash = ...; // From torrent metadata
+Piece piece = new Piece(0, 262144, expectedHash);
+
+// Download blocks
+while (!piece.isComplete()) {
+    Piece.BlockRequest request = piece.getNextBlockRequest();
+    if (request == null) break;
+
+    // Request block from peer
+    connection.requestBlock(
+        request.getPieceIndex(),
+        request.getBegin(),
+        request.getLength()
+    );
+
+    // Receive and write block
+    PeerMessage msg = connection.receiveMessage();
+    PeerMessage.BlockInfo block = msg.getBlockInfo();
+    piece.writeBlock(block.getBegin(), block.getData());
+}
+
+// Verify integrity
+if (piece.verify()) {
+    byte[] pieceData = piece.getData();
+    System.out.println("Piece verified and complete!");
+}
+```
+
+### Track Download Progress
+
+```java
+Bitfield bitfield = new Bitfield(metadata.getNumPieces());
+
+// Mark pieces as downloaded
+bitfield.setPiece(0);
+bitfield.setPiece(1);
+
+System.out.println(bitfield); // Bitfield[2/100 pieces (2.0%)]
+
+// Find next piece to download
+int nextPiece = bitfield.getNextMissingPiece();
+
+// Check if download is complete
+if (bitfield.isComplete()) {
+    System.out.println("Download complete!");
+}
+```
+
 ### Bencode Encoding/Decoding
 
 ```java
@@ -102,6 +206,42 @@ Map<String, Object> map = (Map<String, Object>) decoded;
 
 String name = BencodeDecoder.getString(map, "name");
 Long size = BencodeDecoder.getLong(map, "size");
+```
+
+### Complete Download with Download Manager
+
+```java
+// Parse torrent file
+byte[] torrentData = Files.readAllBytes(Path.of("movie.torrent"));
+TorrentMetadata metadata = TorrentMetadata.fromTorrentFile(torrentData);
+
+// Create tracker client and download manager
+TrackerClient trackerClient = new TrackerClient(6881);
+Path downloadPath = Path.of("/downloads/movie.mkv");
+
+DownloadManager manager = new DownloadManager(
+    metadata,
+    trackerClient,
+    downloadPath,
+    PieceSelectionStrategy.SEQUENTIAL // Best for video streaming
+);
+
+// Start download
+manager.start();
+
+// Monitor progress
+while (!manager.isComplete()) {
+    System.out.printf("Progress: %.2f%% - %d peers - %d KB/s%n",
+        manager.getProgress(),
+        manager.getActivePeerCount(),
+        manager.getDownloadSpeed() / 1024
+    );
+    Thread.sleep(1000);
+}
+
+// Stop when complete
+manager.stop();
+System.out.println("Download complete!");
 ```
 
 ## Testing
