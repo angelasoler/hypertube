@@ -88,7 +88,7 @@ public class TorrentService {
             log.info("- Listening port: {}", port);
             log.info("- Max connections: {}", streamingConfig.getTorrent().getMaxConnections());
             log.info("- Buffer threshold: {}%", BUFFER_THRESHOLD_PERCENT);
-            log.info("- DHT enabled: {}", streamingConfig.getTorrent().getDhtEnabled());
+            log.info("- DHT enabled: {}", streamingConfig.getTorrent().isDhtEnabled());
 
             log.info("TorrentService initialized successfully");
 
