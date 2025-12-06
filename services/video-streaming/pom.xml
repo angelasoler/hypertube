@@ -92,17 +92,12 @@
             <version>2.15.1</version>
         </dependency>
 
-        <!-- libtorrent4j for BitTorrent downloads -->
-        <!-- NOTE: This dependency needs to be built from source or obtained separately -->
-        <!-- See: https://github.com/aldenml/libtorrent4j -->
-        <!-- The code is ready to use libtorrent4j once the library is available -->
-        <!--
+        <!-- HyperTube Torrent Library (Custom BitTorrent implementation) -->
         <dependency>
-            <groupId>org.libtorrent4j</groupId>
-            <artifactId>libtorrent4j</artifactId>
-            <version>2.1.0-25</version>
+            <groupId>com.hypertube</groupId>
+            <artifactId>torrent-lib</artifactId>
+            <version>1.0.0</version>
         </dependency>
-        -->
 
         <!-- JSON processing -->
         <dependency>

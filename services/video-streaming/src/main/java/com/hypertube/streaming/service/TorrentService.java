@@ -4,39 +4,37 @@ import com.hypertube.streaming.config.StreamingConfig;
 import com.hypertube.streaming.entity.DownloadJob;
 import com.hypertube.streaming.repository.CachedVideoRepository;
 import com.hypertube.streaming.repository.DownloadJobRepository;
+import com.hypertube.streaming.worker.DownloadWorker;
+import com.hypertube.torrent.TorrentMetadata;
+import com.hypertube.torrent.bencode.BencodeException;
+import com.hypertube.torrent.manager.DownloadException;
+import com.hypertube.torrent.manager.DownloadManager;
+import com.hypertube.torrent.manager.PieceSelectionStrategy;
+import com.hypertube.torrent.tracker.TrackerClient;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
 
 /**
- * TorrentService - Handles BitTorrent downloads for video streaming with progressive streaming support.
+ * TorrentService - Handles BitTorrent downloads for video streaming using custom torrent library.
  *
- * IMPORTANT: This is currently a placeholder implementation.
- *
- * The full implementation requires libtorrent4j which needs to be built from source
- * or obtained separately. See: https://github.com/aldenml/libtorrent4j
- *
- * Key features to be implemented when libtorrent4j is available:
- * - Sequential piece downloading (not rarest-first) for streaming optimization
- * - Buffer threshold (5-10% minimum) before streaming begins
+ * Features:
+ * - Sequential piece downloading (optimized for streaming)
+ * - Multi-peer concurrent downloads
  * - Progress tracking and callbacks
- * - Partial file serving during active downloads
- *
- * Implementation notes for when libtorrent4j is integrated:
- * 1. Initialize SessionManager with sequential download settings
- * 2. Configure DHT for magnet link support
- * 3. Set connection limits from StreamingConfig
- * 4. Implement alert processor thread for torrent events
- * 5. Handle TORRENT_FINISHED, TORRENT_ERROR, STATE_UPDATE, METADATA_RECEIVED alerts
- * 6. Track active torrents with ConcurrentHashMap<UUID, TorrentHandle>
- * 7. Implement buffer threshold check (10% default)
- * 8. Provide progress callbacks to DownloadWorker
+ * - Buffer threshold for early streaming
+ * - Automatic file verification with SHA-1 hashes
  */
 @Service
 @Slf4j
@@ -47,8 +45,13 @@ public class TorrentService {
     private final StreamingConfig streamingConfig;
     private final DownloadJobRepository downloadJobRepository;
     private final CachedVideoRepository cachedVideoRepository;
+    private final DownloadWorker downloadWorker;
 
-    private final Map<UUID, Integer> mockProgress = new ConcurrentHashMap<>();
+    private TrackerClient trackerClient;
+    private final Map<UUID, DownloadManager> activeDownloads = new ConcurrentHashMap<>();
+    private final Map<UUID, Path> downloadPaths = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService progressMonitor = Executors.newScheduledThreadPool(1);
+    private final ExecutorService downloadExecutor = Executors.newCachedThreadPool();
 
     @FunctionalInterface
     public interface ProgressCallback {
@@ -57,35 +60,82 @@ public class TorrentService {
 
     public TorrentService(StreamingConfig streamingConfig,
                          DownloadJobRepository downloadJobRepository,
-                         CachedVideoRepository cachedVideoRepository) {
+                         CachedVideoRepository cachedVideoRepository,
+                         @Lazy DownloadWorker downloadWorker) {
         this.streamingConfig = streamingConfig;
         this.downloadJobRepository = downloadJobRepository;
         this.cachedVideoRepository = cachedVideoRepository;
+        this.downloadWorker = downloadWorker;
     }
 
     @PostConstruct
     public void init() {
-        log.warn("=================================================================");
-        log.warn("TorrentService initialized with PLACEHOLDER implementation");
-        log.warn("libtorrent4j is required for actual torrent download functionality");
-        log.warn("See: https://github.com/aldenml/libtorrent4j");
-        log.warn("=================================================================");
-        log.info("Service configuration:");
-        log.info("- Download path: {}", streamingConfig.getTorrent().getDownloadPath());
-        log.info("- Max connections: {}", streamingConfig.getTorrent().getMaxConnections());
-        log.info("- Buffer threshold: {}%", BUFFER_THRESHOLD_PERCENT);
+        log.info("=================================================================");
+        log.info("Initializing TorrentService with custom BitTorrent library");
+        log.info("=================================================================");
+
+        try {
+            // Create download directory
+            Path downloadPath = Paths.get(streamingConfig.getTorrent().getDownloadPath());
+            Files.createDirectories(downloadPath);
+
+            // Initialize tracker client
+            int port = streamingConfig.getTorrent().getPortRangeStart();
+            trackerClient = new TrackerClient(port);
+
+            log.info("Service configuration:");
+            log.info("- Download path: {}", streamingConfig.getTorrent().getDownloadPath());
+            log.info("- Listening port: {}", port);
+            log.info("- Max connections: {}", streamingConfig.getTorrent().getMaxConnections());
+            log.info("- Buffer threshold: {}%", BUFFER_THRESHOLD_PERCENT);
+            log.info("- DHT enabled: {}", streamingConfig.getTorrent().getDhtEnabled());
+
+            log.info("TorrentService initialized successfully");
+
+        } catch (IOException e) {
+            log.error("Failed to initialize TorrentService", e);
+            throw new RuntimeException("Failed to initialize TorrentService", e);
+        }
     }
 
     @PreDestroy
     public void shutdown() {
         log.info("Shutting down TorrentService");
-        mockProgress.clear();
+
+        // Stop all active downloads
+        activeDownloads.values().forEach(manager -> {
+            try {
+                manager.stop();
+            } catch (Exception e) {
+                log.warn("Error stopping download manager", e);
+            }
+        });
+
+        activeDownloads.clear();
+        downloadPaths.clear();
+
+        // Shutdown executors
+        progressMonitor.shutdown();
+        downloadExecutor.shutdown();
+
+        try {
+            if (!progressMonitor.awaitTermination(5, TimeUnit.SECONDS)) {
+                progressMonitor.shutdownNow();
+            }
+            if (!downloadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                downloadExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            progressMonitor.shutdownNow();
+            downloadExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+
+        log.info("TorrentService shutdown complete");
     }
 
     /**
      * Starts a torrent download with sequential piece downloading.
-     *
-     * PLACEHOLDER: This method logs the request but doesn't perform actual downloads.
      *
      * @param jobId The download job ID
      * @param videoId The video ID
@@ -95,96 +145,253 @@ public class TorrentService {
      */
     public void startDownload(UUID jobId, UUID videoId, UUID torrentId,
                             String magnetOrUrl, ProgressCallback progressCallback) {
-        log.warn("PLACEHOLDER: startDownload called for job: {}", jobId);
+        log.info("Starting torrent download for job: {}", jobId);
         log.info("Video ID: {}, Torrent ID: {}", videoId, torrentId);
         log.info("Magnet/URL: {}", magnetOrUrl);
-        log.warn("Actual download requires libtorrent4j integration");
 
-        try {
-            // Update job status
-            downloadJobRepository.findById(jobId).ifPresent(job -> {
-                job.setStatus(DownloadJob.DownloadStatus.PENDING);
-                job.setProgress(0);
-                job.setErrorMessage("Torrent download not yet implemented - requires libtorrent4j");
-                job.setUpdatedAt(LocalDateTime.now());
-                downloadJobRepository.save(job);
-            });
+        downloadExecutor.submit(() -> {
+            try {
+                // Parse torrent metadata
+                TorrentMetadata metadata = parseTorrentMetadata(magnetOrUrl);
+                log.info("Parsed torrent: {} ({} bytes, {} pieces)",
+                    metadata.getName(), metadata.getTotalSize(), metadata.getNumPieces());
 
-            // Store mock progress
-            mockProgress.put(jobId, 0);
+                // Generate download file path
+                Path downloadPath = generateDownloadPath(videoId, metadata.getName());
+                downloadPaths.put(jobId, downloadPath);
 
-        } catch (Exception e) {
-            log.error("Error in placeholder startDownload for job: {}", jobId, e);
+                // Create download manager with SEQUENTIAL strategy (best for streaming)
+                DownloadManager manager = new DownloadManager(
+                    metadata,
+                    trackerClient,
+                    downloadPath,
+                    PieceSelectionStrategy.SEQUENTIAL
+                );
 
-            downloadJobRepository.findById(jobId).ifPresent(job -> {
-                job.setStatus(DownloadJob.DownloadStatus.FAILED);
-                job.setErrorMessage("Failed to start download: " + e.getMessage());
-                job.setUpdatedAt(LocalDateTime.now());
-                downloadJobRepository.save(job);
-            });
-        }
+                activeDownloads.put(jobId, manager);
+
+                // Update job status
+                updateJobStatus(jobId, DownloadJob.DownloadStatus.DOWNLOADING);
+
+                // Start download
+                manager.start();
+                log.info("Download started for job: {}", jobId);
+
+                // Start progress monitoring
+                scheduleProgressMonitoring(jobId, manager, progressCallback);
+
+                // Wait for completion in background
+                waitForCompletion(jobId, manager, downloadPath);
+
+            } catch (BencodeException e) {
+                log.error("Failed to parse torrent metadata for job: {}", jobId, e);
+                markJobFailed(jobId, "Invalid torrent format: " + e.getMessage());
+
+            } catch (DownloadException e) {
+                log.error("Failed to start download for job: {}", jobId, e);
+                markJobFailed(jobId, "Download failed: " + e.getMessage());
+
+            } catch (IOException e) {
+                log.error("I/O error during download for job: {}", jobId, e);
+                markJobFailed(jobId, "I/O error: " + e.getMessage());
+
+            } catch (Exception e) {
+                log.error("Unexpected error during download for job: {}", jobId, e);
+                markJobFailed(jobId, "Unexpected error: " + e.getMessage());
+            }
+        });
     }
 
     /**
      * Checks if a download has reached the buffer threshold and is ready for streaming.
      *
-     * PLACEHOLDER: Always returns false until libtorrent4j is integrated.
-     *
      * @param jobId The download job ID
      * @return true if ready for streaming, false otherwise
      */
     public boolean isReadyForStreaming(UUID jobId) {
-        Integer progress = mockProgress.get(jobId);
-        if (progress == null) {
+        DownloadManager manager = activeDownloads.get(jobId);
+        if (manager == null) {
             return false;
         }
 
-        // In real implementation, check if progress >= BUFFER_THRESHOLD_PERCENT
+        double progress = manager.getProgress();
         return progress >= BUFFER_THRESHOLD_PERCENT;
     }
 
     /**
      * Gets the file path for a download job.
      *
-     * PLACEHOLDER: Returns null until libtorrent4j is integrated.
-     *
      * @param jobId The download job ID
      * @return The file path, or null if not available
      */
     public String getFilePath(UUID jobId) {
-        log.debug("PLACEHOLDER: getFilePath called for job: {}", jobId);
-
-        // In real implementation:
-        // 1. Get TorrentHandle from activeTorrents map
-        // 2. Get TorrentInfo from handle
-        // 3. Combine savePath + fileName
-        // 4. Return full file path
-
+        Path path = downloadPaths.get(jobId);
+        if (path != null && Files.exists(path)) {
+            return path.toString();
+        }
         return null;
     }
 
     /**
      * Cancels a download job.
      *
-     * PLACEHOLDER: Updates database status but doesn't stop actual downloads.
-     *
      * @param jobId The download job ID
      */
     public void cancelDownload(UUID jobId) {
-        log.info("PLACEHOLDER: cancelDownload called for job: {}", jobId);
+        log.info("Cancelling download for job: {}", jobId);
 
-        mockProgress.remove(jobId);
+        DownloadManager manager = activeDownloads.remove(jobId);
+        if (manager != null) {
+            try {
+                manager.stop();
+                log.info("Download stopped for job: {}", jobId);
+            } catch (Exception e) {
+                log.warn("Error stopping download manager for job: {}", jobId, e);
+            }
+        }
 
-        downloadJobRepository.findById(jobId).ifPresent(job -> {
-            job.setStatus(DownloadJob.DownloadStatus.CANCELLED);
-            job.setUpdatedAt(LocalDateTime.now());
-            downloadJobRepository.save(job);
-        });
+        downloadPaths.remove(jobId);
 
-        // In real implementation:
-        // 1. Remove torrent handle from SessionManager
-        // 2. Remove from activeTorrents map
-        // 3. Remove progress callback
-        // 4. Clean up partial download files if needed
+        updateJobStatus(jobId, DownloadJob.DownloadStatus.CANCELLED);
+    }
+
+    /**
+     * Parse torrent metadata from magnet link or .torrent file
+     */
+    private TorrentMetadata parseTorrentMetadata(String magnetOrUrl) throws BencodeException, IOException {
+        if (magnetOrUrl.startsWith("magnet:")) {
+            return TorrentMetadata.fromMagnetLink(magnetOrUrl);
+        } else {
+            // Assume it's a URL to a .torrent file
+            // TODO: Download .torrent file from URL
+            throw new BencodeException("Direct .torrent URL not yet supported, use magnet links");
+        }
+    }
+
+    /**
+     * Generate download file path based on video ID and torrent name
+     */
+    private Path generateDownloadPath(UUID videoId, String torrentName) throws IOException {
+        Path baseDir = Paths.get(streamingConfig.getTorrent().getDownloadPath());
+        Files.createDirectories(baseDir);
+
+        // Use video ID as directory name to avoid conflicts
+        Path videoDir = baseDir.resolve(videoId.toString());
+        Files.createDirectories(videoDir);
+
+        // Use torrent name as filename (sanitize it)
+        String sanitizedName = torrentName.replaceAll("[^a-zA-Z0-9.-]", "_");
+        return videoDir.resolve(sanitizedName);
+    }
+
+    /**
+     * Schedule periodic progress monitoring
+     */
+    private void scheduleProgressMonitoring(UUID jobId, DownloadManager manager, ProgressCallback callback) {
+        progressMonitor.scheduleAtFixedRate(() -> {
+            try {
+                if (!activeDownloads.containsKey(jobId)) {
+                    return; // Download was cancelled or completed
+                }
+
+                double progress = manager.getProgress();
+                long downloadSpeed = manager.getDownloadSpeed();
+                long downloaded = manager.getDownloaded().get();
+                long remaining = 0; // TODO: Calculate remaining bytes
+                int etaSeconds = downloadSpeed > 0 ? (int) (remaining / downloadSpeed) : -1;
+
+                // Call progress callback
+                if (callback != null) {
+                    callback.onProgress(jobId, (int) progress, downloadSpeed, etaSeconds);
+                }
+
+                log.debug("Job {}: Progress={:.2f}%, Speed={} KB/s, Peers={}",
+                    jobId, progress, downloadSpeed / 1024, manager.getActivePeerCount());
+
+            } catch (Exception e) {
+                log.warn("Error monitoring progress for job: {}", jobId, e);
+            }
+        }, 1, 2, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Wait for download completion in background thread
+     */
+    private void waitForCompletion(UUID jobId, DownloadManager manager, Path downloadPath) {
+        try {
+            // Poll until complete
+            while (!manager.isComplete() && activeDownloads.containsKey(jobId)) {
+                Thread.sleep(1000);
+            }
+
+            if (manager.isComplete()) {
+                log.info("Download completed for job: {}", jobId);
+
+                // Stop the download manager
+                manager.stop();
+                activeDownloads.remove(jobId);
+
+                // Notify completion
+                markJobCompleted(jobId, downloadPath.toString());
+
+            } else {
+                log.info("Download was cancelled for job: {}", jobId);
+            }
+
+        } catch (InterruptedException e) {
+            log.warn("Download monitoring interrupted for job: {}", jobId);
+            Thread.currentThread().interrupt();
+
+        } catch (Exception e) {
+            log.error("Error waiting for download completion for job: {}", jobId, e);
+            markJobFailed(jobId, "Error during download: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Update job status in database
+     */
+    private void updateJobStatus(UUID jobId, DownloadJob.DownloadStatus status) {
+        try {
+            downloadJobRepository.findById(jobId).ifPresent(job -> {
+                job.setStatus(status);
+                job.setUpdatedAt(LocalDateTime.now());
+                downloadJobRepository.save(job);
+            });
+        } catch (Exception e) {
+            log.error("Error updating job status for job: {}", jobId, e);
+        }
+    }
+
+    /**
+     * Mark job as completed and trigger conversion if needed
+     */
+    private void markJobCompleted(UUID jobId, String filePath) {
+        try {
+            // Delegate to DownloadWorker which handles conversion workflow
+            downloadWorker.markJobCompleted(jobId, filePath);
+            log.info("Download job marked as completed: {}", jobId);
+        } catch (Exception e) {
+            log.error("Error marking job as completed: {}", jobId, e);
+        }
+    }
+
+    /**
+     * Mark job as failed
+     */
+    private void markJobFailed(UUID jobId, String errorMessage) {
+        try {
+            DownloadManager manager = activeDownloads.remove(jobId);
+            if (manager != null) {
+                manager.stop();
+            }
+
+            downloadPaths.remove(jobId);
+
+            // Delegate to DownloadWorker
+            downloadWorker.markJobFailed(jobId, errorMessage);
+        } catch (Exception e) {
+            log.error("Error marking job as failed: {}", jobId, e);
+        }
     }
 }
