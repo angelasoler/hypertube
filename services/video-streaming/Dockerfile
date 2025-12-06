@@ -1,14 +1,23 @@
 # Build stage
 FROM maven:3.9-eclipse-temurin-17-alpine AS build
 
-WORKDIR /app
+WORKDIR /workspace
 
-# Copy pom.xml and download dependencies
-COPY pom.xml .
-RUN mvn dependency:go-offline -B
+# First, build and install the torrent-lib dependency
+COPY torrent-lib/pom.xml ./torrent-lib/
+COPY torrent-lib/src ./torrent-lib/src
 
-# Copy source code and build
-COPY src ./src
+WORKDIR /workspace/torrent-lib
+RUN mvn clean install -DskipTests
+
+# Now build the video-streaming service
+WORKDIR /workspace/video-streaming
+
+# Copy pom.xml and source code
+COPY video-streaming/pom.xml .
+COPY video-streaming/src ./src
+
+# Build the service (dependencies will be downloaded during build)
 RUN mvn clean package -DskipTests
 
 # Runtime stage
@@ -16,15 +25,11 @@ FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
 
-# Install required packages for video processing and torrents
+# Install required packages for video processing
 RUN apk add --no-cache \
     curl \
     ffmpeg \
-    ffmpeg-libs \
-    boost-system \
-    boost-python3 \
-    libtorrent \
-    libtorrent-dev
+    ffmpeg-libs
 
 # Create non-root user
 RUN addgroup -S spring && adduser -S spring -G spring
@@ -36,7 +41,7 @@ RUN mkdir -p /tmp/hypertube/videos /tmp/hypertube/temp /tmp/hypertube/subtitles 
 USER spring:spring
 
 # Copy jar from build stage
-COPY --from=build /app/target/*.jar app.jar
+COPY --from=build /workspace/video-streaming/target/*.jar app.jar
 
 EXPOSE 8083
 

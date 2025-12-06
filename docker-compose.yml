@@ -171,8 +171,8 @@ services:
 
   streaming-service:
     build:
-      context: ./services/video-streaming
-      dockerfile: Dockerfile
+      context: ./services
+      dockerfile: video-streaming/Dockerfile
     container_name: hypertube-streaming-service
     ports:
       - "8083:8083"
