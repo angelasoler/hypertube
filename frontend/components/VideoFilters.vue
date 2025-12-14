@@ -8,6 +8,7 @@
           v-model="localFilters.query"
           type="text"
           placeholder="Search by title..."
+          data-testid="search-input"
           class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
           @keyup.enter="applyFilters"
         />

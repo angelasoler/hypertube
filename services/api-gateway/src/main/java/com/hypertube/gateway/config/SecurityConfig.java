@@ -65,6 +65,11 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeExchange(exchanges -> exchanges
                 // Public endpoints - no authentication required
+                // Standard API paths (non-versioned, non-service-prefixed)
+                .pathMatchers("/api/auth/login", "/api/auth/register").permitAll()
+                .pathMatchers("/api/auth/oauth/**").permitAll()
+                .pathMatchers("/api/auth/password-reset/**").permitAll()
+
                 // V1 API paths (versioned)
                 .pathMatchers("/api/v1/auth/login", "/api/v1/auth/register").permitAll()
                 .pathMatchers("/api/v1/auth/oauth/**").permitAll()

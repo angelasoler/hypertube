@@ -21,8 +21,11 @@ export const useApi = () => {
       headers['Authorization'] = `Bearer ${authStore.token}`
     }
 
+    // Use proxy in browser (relative path), direct URL on server
+    const url = process.client ? endpoint : `${apiBase}${endpoint}`
+
     try {
-      const response = await fetch(`${apiBase}${endpoint}`, {
+      const response = await fetch(url, {
         ...options,
         headers,
       })
@@ -56,15 +59,20 @@ export const useApi = () => {
   return {
     // Generic HTTP methods
     get: <T>(endpoint: string, options: { params?: Record<string, any> } = {}) => {
-      const url = new URL(`${apiBase}${endpoint}`, window.location.origin)
+      let finalUrl = endpoint
       if (options.params) {
+        const params = new URLSearchParams()
         Object.entries(options.params).forEach(([key, value]) => {
           if (value !== undefined && value !== null && value !== '') {
-            url.searchParams.append(key, String(value))
+            params.append(key, String(value))
           }
         })
+        const queryString = params.toString()
+        if (queryString) {
+          finalUrl = `${endpoint}?${queryString}`
+        }
       }
-      return handleRequest<T>(url.pathname + url.search, { method: 'GET' })
+      return handleRequest<T>(finalUrl, { method: 'GET' })
     },
 
     post: <T>(endpoint: string, data?: any) =>
@@ -85,13 +93,13 @@ export const useApi = () => {
     // Auth endpoints
     auth: {
       login: (data: LoginRequest) =>
-        handleRequest<AuthResponse>('/api/users/auth/login', {
+        handleRequest<AuthResponse>('/api/auth/login', {
           method: 'POST',
           body: JSON.stringify(data),
         }),
 
       register: (data: RegisterRequest) =>
-        handleRequest<User>('/api/users/auth/register', {
+        handleRequest<User>('/api/auth/register', {
           method: 'POST',
           body: JSON.stringify(data),
         }),
@@ -100,7 +108,7 @@ export const useApi = () => {
         handleRequest<User>('/api/users/me'),
 
       logout: () =>
-        handleRequest<void>('/api/users/auth/logout', {
+        handleRequest<void>('/api/auth/logout', {
           method: 'POST',
         }),
     },

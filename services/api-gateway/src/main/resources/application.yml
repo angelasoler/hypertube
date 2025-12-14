@@ -5,6 +5,21 @@ spring:
     gateway:
       routes:
         # User Management Service routes - Authentication endpoints with strict rate limiting
+        # Standard API paths (non-versioned, non-service-prefixed)
+        - id: user-auth-standard
+          uri: lb://user-management-service
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - RewritePath=/api/auth/(?<segment>.*), /api/v1/auth/$\{segment}
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter:
+                  replenishRate: 3
+                  burstCapacity: 10
+                  requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
+
         # Frontend-style routes (service-based paths)
         - id: user-service-auth
           uri: lb://user-management-service
@@ -120,6 +135,22 @@ spring:
                 key-resolver: "#{@userKeyResolver}"
 
         # Search/Library Service routes - Higher limits for browsing
+        # Standard API path (non-versioned)
+        - id: videos-standard
+          uri: lb://search-library-service
+          predicates:
+            - Path=/api/videos/**
+          filters:
+            - RewritePath=/api/videos/(?<segment>.*), /api/v1/videos/$\{segment}
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter:
+                  replenishRate: 20  # Higher rate for browsing/searching
+                  burstCapacity: 50
+                  requestedTokens: 1
+                key-resolver: "#{@userKeyResolver}"
+
+        # V1 API route (versioned - legacy)
         - id: videos
           uri: lb://search-library-service
           predicates:

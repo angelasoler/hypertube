@@ -1,0 +1,45 @@
+{
+  "testVideos": [
+    {
+      "query": "Big Buck Bunny",
+      "expectedTitle": "Big Buck Bunny",
+      "magnetUri": "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c",
+      "fileSize": 354983651,
+      "duration": 634,
+      "description": "Open source animated short film by Blender Foundation"
+    },
+    {
+      "query": "Sintel",
+      "expectedTitle": "Sintel",
+      "magnetUri": "magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10",
+      "fileSize": 131099736,
+      "duration": 888,
+      "description": "Open source fantasy short film by Blender Foundation"
+    },
+    {
+      "query": "Elephants Dream",
+      "expectedTitle": "Elephants Dream",
+      "magnetUri": "magnet:?xt=urn:btih:d54dfff2d7cd3e9f8d0e4c1a9e52e6f7a0d0e7e1",
+      "fileSize": 215000000,
+      "duration": 653,
+      "description": "Open source surrealist film by Blender Foundation"
+    }
+  ],
+  "testUser": {
+    "username": "e2e_user",
+    "email": "e2e_user@test.com",
+    "password": "TestPass123",
+    "firstName": "E2E",
+    "lastName": "Test User"
+  },
+  "searchQueries": {
+    "popular": ["action", "comedy", "drama", "thriller"],
+    "specific": ["matrix", "inception", "interstellar"],
+    "empty": ["xyzqwerty12345"]
+  },
+  "filters": {
+    "genres": ["Action", "Comedy", "Drama", "Horror", "Sci-Fi"],
+    "years": ["2020", "2019", "2018", "2017"],
+    "ratings": ["8.0+", "7.0+", "6.0+"]
+  }
+}

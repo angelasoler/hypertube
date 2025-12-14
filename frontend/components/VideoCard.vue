@@ -2,6 +2,7 @@
   <div
     class="video-card group relative overflow-hidden rounded-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl cursor-pointer"
     :class="{ 'watched': video.watched }"
+    data-testid="video-card"
     @click="$emit('click', video)"
   >
     <!-- Watched Indicator -->
