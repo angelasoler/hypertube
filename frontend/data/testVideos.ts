@@ -15,25 +15,9 @@ export interface TestVideo {
   genre?: string
   cast?: string[]
   director?: string
-  jobId?: string  // Pre-existing download job ID for testing
 }
 
 export const testVideos: TestVideo[] = [
-  {
-    id: 'test-video',
-    title: 'Test Video - Streaming Demo',
-    year: 2025,
-    description: 'A short test video to demonstrate HyperTube\'s streaming capabilities with HTTP Range support.',
-    longDescription: 'This is a generated test video created with FFmpeg to demonstrate the complete video streaming workflow in HyperTube. It showcases progressive streaming, HTTP Range request support, and the video player integration.',
-    thumbnail: 'https://via.placeholder.com/400x300/1e3a8a/60a5fa?text=Test+Video',
-    magnetLink: 'magnet:?xt=urn:btih:test',
-    rating: 10.0,
-    duration: '00:10',
-    genre: 'Test, Demo',
-    director: 'HyperTube Team',
-    cast: ['FFmpeg', 'LibX264'],
-    jobId: 'a14015e0-b23c-4ce9-b6af-05026cbd049a', // Pre-existing completed job
-  },
   {
     id: 'sintel',
     title: 'Sintel',

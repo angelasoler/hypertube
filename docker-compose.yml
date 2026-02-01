@@ -89,13 +89,8 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       JWT_SECRET: ${JWT_SECRET}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
     depends_on:
       eureka-server:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     networks:
       - hypertube-network
@@ -174,8 +169,6 @@ services:
       context: ./services/video-streaming
       dockerfile: Dockerfile
     container_name: hypertube-streaming-service
-    ports:
-      - "8083:8083"
     environment:
       SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hypertube}
