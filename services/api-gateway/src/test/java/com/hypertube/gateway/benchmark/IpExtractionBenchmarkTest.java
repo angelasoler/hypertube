@@ -19,7 +19,7 @@ public class IpExtractionBenchmarkTest {
         }
 
         // Benchmark
-        long iterations = 10_000_000;
+        long iterations = Boolean.getBoolean("fullBenchmark") ? 10_000_000 : 1_000;
 
         long start = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
@@ -45,7 +45,7 @@ public class IpExtractionBenchmarkTest {
         }
         long durationOptimizedMulti = System.nanoTime() - start;
 
-        System.out.println("Results (10M iterations):");
+        System.out.println("Results (" + iterations + " iterations):");
         System.out.printf("Original Single IP: %d ms%n", durationOriginalSingle / 1_000_000);
         System.out.printf("Optimized Single IP: %d ms%n", durationOptimizedSingle / 1_000_000);
         System.out.printf("Original Multi IP: %d ms%n", durationOriginalMulti / 1_000_000);
