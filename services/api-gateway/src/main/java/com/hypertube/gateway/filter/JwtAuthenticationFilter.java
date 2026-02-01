@@ -24,6 +24,7 @@ import reactor.core.publisher.Mono;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.regex.Pattern;
 
 /**
  * JWT Authentication Filter
@@ -40,6 +41,8 @@ import java.util.Date;
 public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAuthenticationFilter.Config> {
 
     private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+    private static final Pattern CONTROL_CHARS = Pattern.compile("[\\p{Cntrl}&&[^\r\n\t]]");
+    private static final Pattern NEWLINE_CHARS = Pattern.compile("[\r\n]");
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -164,12 +167,10 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
         }
 
         // Remove control characters and limit length
-        String sanitized = value
-            .replaceAll("[\\p{Cntrl}&&[^\r\n\t]]", "") // Remove control chars except whitespace
-            .trim();
+        String sanitized = CONTROL_CHARS.matcher(value).replaceAll("").trim();
 
         // Prevent header injection attacks - remove newlines and carriage returns
-        sanitized = sanitized.replaceAll("[\r\n]", "");
+        sanitized = NEWLINE_CHARS.matcher(sanitized).replaceAll("");
 
         // Limit length to prevent DOS attacks
         if (sanitized.length() > 255) {
