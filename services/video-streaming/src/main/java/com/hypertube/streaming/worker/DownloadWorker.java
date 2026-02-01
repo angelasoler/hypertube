@@ -1,12 +1,16 @@
 package com.hypertube.streaming.worker;
 
+import com.hypertube.streaming.dto.ConversionMessage;
 import com.hypertube.streaming.dto.DownloadMessage;
 import com.hypertube.streaming.entity.DownloadJob;
 import com.hypertube.streaming.repository.DownloadJobRepository;
+import com.hypertube.streaming.service.FFmpegService;
 import com.hypertube.streaming.service.TorrentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +20,7 @@ import java.util.UUID;
 /**
  * Worker that processes video download jobs from the RabbitMQ queue.
  * Handles torrent downloads with progressive streaming support.
+ * Automatically triggers conversion for non-browser-compatible formats.
  */
 @Component
 @RequiredArgsConstructor
@@ -24,6 +29,11 @@ public class DownloadWorker {
 
     private final DownloadJobRepository downloadJobRepository;
     private final TorrentService torrentService;
+    private final FFmpegService ffmpegService;
+    private final RabbitTemplate rabbitTemplate;
+
+    @Value("${rabbitmq.queues.conversion}")
+    private String conversionQueue;
 
     /**
      * Listens to the download queue and processes download job messages.
@@ -96,7 +106,7 @@ public class DownloadWorker {
     }
 
     /**
-     * Marks a download job as completed.
+     * Marks a download job as completed and triggers conversion if needed.
      *
      * @param jobId The job ID
      * @param filePath The path to the downloaded file
@@ -104,12 +114,35 @@ public class DownloadWorker {
     public void markJobCompleted(UUID jobId, String filePath) {
         try {
             downloadJobRepository.findById(jobId).ifPresent(job -> {
-                job.setStatus(DownloadJob.DownloadStatus.COMPLETED);
-                job.setProgress(100);
                 job.setFilePath(filePath);
+                job.setProgress(100);
                 job.setUpdatedAt(LocalDateTime.now());
+
+                // Check if video needs format conversion
+                if (ffmpegService.needsConversion(filePath)) {
+                    log.info("Video {} needs conversion, sending to conversion queue", filePath);
+
+                    // Send conversion message
+                    ConversionMessage conversionMessage = ConversionMessage.builder()
+                            .jobId(jobId)
+                            .videoId(job.getVideoId())
+                            .inputFilePath(filePath)
+                            .outputFilePath(ffmpegService.generateOutputPath(filePath))
+                            .build();
+
+                    rabbitTemplate.convertAndSend(conversionQueue, conversionMessage);
+
+                    // Status will be updated by ConversionWorker
+                    job.setStatus(DownloadJob.DownloadStatus.DOWNLOADING);
+                    log.info("Conversion job queued for: {}", jobId);
+                } else {
+                    // No conversion needed, mark as completed
+                    job.setStatus(DownloadJob.DownloadStatus.COMPLETED);
+                    job.setCompletedAt(LocalDateTime.now());
+                    log.info("Download job completed (no conversion needed): {}", jobId);
+                }
+
                 downloadJobRepository.save(job);
-                log.info("Download job completed: {}", jobId);
             });
         } catch (Exception e) {
             log.error("Error marking job as completed: {}", jobId, e);
