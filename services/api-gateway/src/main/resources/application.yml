@@ -180,16 +180,6 @@ spring:
                   requestedTokens: 1
                 key-resolver: "#{@userKeyResolver}"
 
-      # Default filters for routes without explicit rate limiting
-      default-filters:
-        - name: RequestRateLimiter
-          args:
-            redis-rate-limiter:
-              replenishRate: 10
-              burstCapacity: 20
-              requestedTokens: 1
-            key-resolver: "#{@ipKeyResolver}"
-
 server:
   port: ${API_GATEWAY_PORT:8080}
 
