@@ -12,10 +12,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ServerWebExchange;
@@ -23,7 +27,7 @@ import reactor.core.publisher.Mono;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
-import java.util.Date;
+import java.util.List;
 
 /**
  * JWT Authentication Filter
@@ -64,67 +68,116 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
                 return chain.filter(exchange);
             }
 
-            // Extract JWT token from Authorization header
-            String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                return onError(exchange, "Missing or invalid Authorization header", HttpStatus.UNAUTHORIZED);
-            }
-
-            String token = authHeader.substring(7);
-
-            try {
-                // Validate and parse JWT with comprehensive security checks
-                Claims claims = validateToken(token);
-
-                // Sanitize and validate claims before forwarding to downstream services
-                String userId = sanitizeClaimValue(claims.getSubject());
-                String userEmail = sanitizeClaimValue(claims.get("email", String.class));
-                String username = sanitizeClaimValue(claims.get("username", String.class));
-
-                // Validate required claims are present
-                if (!StringUtils.hasText(userId)) {
-                    log.warn("JWT token missing required 'sub' claim");
-                    return onError(exchange, "Invalid token: missing user ID", HttpStatus.UNAUTHORIZED);
-                }
-
-                // Add user information to request headers for downstream services
-                ServerHttpRequest.Builder requestBuilder = request.mutate()
-                    .header("X-User-Id", userId);
-
-                if (StringUtils.hasText(userEmail)) {
-                    requestBuilder.header("X-User-Email", userEmail);
-                }
-                if (StringUtils.hasText(username)) {
-                    requestBuilder.header("X-User-Username", username);
-                }
-
-                ServerHttpRequest modifiedRequest = requestBuilder.build();
-                return chain.filter(exchange.mutate().request(modifiedRequest).build());
-
-            } catch (ExpiredJwtException e) {
-                log.warn("JWT token expired: {}", e.getMessage());
-                return onError(exchange, "Token expired", HttpStatus.UNAUTHORIZED);
-            } catch (SignatureException e) {
-                log.error("Invalid JWT signature: {}", e.getMessage());
-                return onError(exchange, "Invalid token signature", HttpStatus.UNAUTHORIZED);
-            } catch (MalformedJwtException e) {
-                log.error("Malformed JWT token: {}", e.getMessage());
-                return onError(exchange, "Malformed token", HttpStatus.UNAUTHORIZED);
-            } catch (UnsupportedJwtException e) {
-                log.error("Unsupported JWT token: {}", e.getMessage());
-                return onError(exchange, "Unsupported token", HttpStatus.UNAUTHORIZED);
-            } catch (IllegalArgumentException e) {
-                log.error("JWT claims string is empty: {}", e.getMessage());
-                return onError(exchange, "Invalid token", HttpStatus.UNAUTHORIZED);
-            } catch (JwtException e) {
-                log.error("JWT validation failed: {}", e.getMessage());
-                return onError(exchange, "Invalid token", HttpStatus.UNAUTHORIZED);
-            } catch (Exception e) {
-                log.error("Unexpected error during JWT validation: {}", e.getMessage(), e);
-                return onError(exchange, "Authentication failed", HttpStatus.UNAUTHORIZED);
-            }
+            return ReactiveSecurityContextHolder.getContext()
+                .map(SecurityContext::getAuthentication)
+                .filter(auth -> auth.getPrincipal() instanceof Jwt)
+                .map(auth -> (Jwt) auth.getPrincipal())
+                .flatMap(jwt -> processJwtFromContext(exchange, chain, jwt))
+                .switchIfEmpty(Mono.defer(() -> processManualValidation(exchange, chain)));
         };
+    }
+
+    private Mono<Void> processJwtFromContext(ServerWebExchange exchange, GatewayFilterChain chain, Jwt jwt) {
+        try {
+            // Validate Issuer
+            String issuer = jwt.getClaimAsString("iss");
+            if (!jwtIssuer.equals(issuer)) {
+                log.warn("Invalid JWT issuer: {}", issuer);
+                return onError(exchange, "Invalid token issuer", HttpStatus.UNAUTHORIZED);
+            }
+
+            // Validate Audience
+            List<String> audience = jwt.getAudience();
+            if (audience == null || !audience.contains(jwtAudience)) {
+                log.warn("Invalid JWT audience: {}", audience);
+                return onError(exchange, "Invalid token audience", HttpStatus.UNAUTHORIZED);
+            }
+
+            // Sanitize and validate claims before forwarding to downstream services
+            String userId = sanitizeClaimValue(jwt.getSubject());
+            String userEmail = sanitizeClaimValue(jwt.getClaimAsString("email"));
+            String username = sanitizeClaimValue(jwt.getClaimAsString("username"));
+
+            // Validate required claims are present
+            if (!StringUtils.hasText(userId)) {
+                log.warn("JWT token missing required 'sub' claim");
+                return onError(exchange, "Invalid token: missing user ID", HttpStatus.UNAUTHORIZED);
+            }
+
+            return forwardRequest(exchange, chain, userId, userEmail, username);
+
+        } catch (Exception e) {
+            log.error("Error processing JWT from context: {}", e.getMessage(), e);
+            return onError(exchange, "Authentication failed", HttpStatus.UNAUTHORIZED);
+        }
+    }
+
+    private Mono<Void> processManualValidation(ServerWebExchange exchange, GatewayFilterChain chain) {
+        ServerHttpRequest request = exchange.getRequest();
+
+        // Extract JWT token from Authorization header
+        String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return onError(exchange, "Missing or invalid Authorization header", HttpStatus.UNAUTHORIZED);
+        }
+
+        String token = authHeader.substring(7);
+
+        try {
+            // Validate and parse JWT with comprehensive security checks
+            Claims claims = validateToken(token);
+
+            // Sanitize and validate claims before forwarding to downstream services
+            String userId = sanitizeClaimValue(claims.getSubject());
+            String userEmail = sanitizeClaimValue(claims.get("email", String.class));
+            String username = sanitizeClaimValue(claims.get("username", String.class));
+
+            // Validate required claims are present
+            if (!StringUtils.hasText(userId)) {
+                log.warn("JWT token missing required 'sub' claim");
+                return onError(exchange, "Invalid token: missing user ID", HttpStatus.UNAUTHORIZED);
+            }
+
+            return forwardRequest(exchange, chain, userId, userEmail, username);
+
+        } catch (ExpiredJwtException e) {
+            log.warn("JWT token expired: {}", e.getMessage());
+            return onError(exchange, "Token expired", HttpStatus.UNAUTHORIZED);
+        } catch (SignatureException e) {
+            log.error("Invalid JWT signature: {}", e.getMessage());
+            return onError(exchange, "Invalid token signature", HttpStatus.UNAUTHORIZED);
+        } catch (MalformedJwtException e) {
+            log.error("Malformed JWT token: {}", e.getMessage());
+            return onError(exchange, "Malformed token", HttpStatus.UNAUTHORIZED);
+        } catch (UnsupportedJwtException e) {
+            log.error("Unsupported JWT token: {}", e.getMessage());
+            return onError(exchange, "Unsupported token", HttpStatus.UNAUTHORIZED);
+        } catch (IllegalArgumentException e) {
+            log.error("JWT claims string is empty: {}", e.getMessage());
+            return onError(exchange, "Invalid token", HttpStatus.UNAUTHORIZED);
+        } catch (JwtException e) {
+            log.error("JWT validation failed: {}", e.getMessage());
+            return onError(exchange, "Invalid token", HttpStatus.UNAUTHORIZED);
+        } catch (Exception e) {
+            log.error("Unexpected error during JWT validation: {}", e.getMessage(), e);
+            return onError(exchange, "Authentication failed", HttpStatus.UNAUTHORIZED);
+        }
+    }
+
+    private Mono<Void> forwardRequest(ServerWebExchange exchange, GatewayFilterChain chain, String userId, String userEmail, String username) {
+        ServerHttpRequest.Builder requestBuilder = exchange.getRequest().mutate()
+            .header("X-User-Id", userId);
+
+        if (StringUtils.hasText(userEmail)) {
+            requestBuilder.header("X-User-Email", userEmail);
+        }
+        if (StringUtils.hasText(username)) {
+            requestBuilder.header("X-User-Username", username);
+        }
+
+        ServerHttpRequest modifiedRequest = requestBuilder.build();
+        return chain.filter(exchange.mutate().request(modifiedRequest).build());
     }
 
     /**
