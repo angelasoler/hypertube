@@ -30,20 +30,4 @@ public interface VideoCastRepository extends JpaRepository<VideoCast, UUID> {
      * Find all videos for a cast member
      */
     List<VideoCast> findByCastMemberId(UUID castMemberId);
-
-    /**
-     * Check if association exists
-     */
-    @Query("""
-        SELECT CASE WHEN COUNT(vc) > 0 THEN true ELSE false END
-        FROM VideoCast vc
-        WHERE vc.video = :video
-        AND vc.castMember = :castMember
-        AND vc.role = :role
-    """)
-    boolean existsByVideoAndCastMemberAndRole(
-        @Param("video") com.hypertube.search.entity.Video video,
-        @Param("castMember") com.hypertube.search.entity.CastMember castMember,
-        @Param("role") String role
-    );
 }

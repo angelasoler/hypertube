@@ -41,19 +41,4 @@ public interface VideoSourceRepository extends JpaRepository<VideoSource, UUID> 
      * Find sources by video and quality
      */
     Optional<VideoSource> findByVideoIdAndQuality(UUID videoId, String quality);
-
-    /**
-     * Find source by video, quality and source type
-     */
-    @Query("""
-        SELECT vs FROM VideoSource vs
-        WHERE vs.video = :video
-        AND vs.quality = :quality
-        AND vs.sourceType = :sourceType
-    """)
-    Optional<VideoSource> findByVideoAndQualityAndSourceType(
-        @Param("video") com.hypertube.search.entity.Video video,
-        @Param("quality") String quality,
-        @Param("sourceType") String sourceType
-    );
 }

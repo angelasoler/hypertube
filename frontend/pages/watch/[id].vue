@@ -234,49 +234,11 @@ onMounted(async () => {
 
     if (!video.value) {
       error.value = 'Video not found'
-      loading.value = false
-      return
-    }
-
-    // If video has a pre-existing jobId (like test-video), load it directly
-    if (video.value.jobId) {
-      await loadExistingJob(video.value.jobId)
     }
   } finally {
     loading.value = false
   }
 })
-
-const loadExistingJob = async (jobId: string) => {
-  try {
-    const response = await api.streaming.checkReadiness(jobId)
-
-    downloadJob.value = {
-      id: jobId,
-      videoId: response.videoId || '',
-      torrentId: response.torrentId || '',
-      userId: authStore.user?.id || '',
-      status: response.status as any,
-      progress: response.progress,
-      filePath: response.filePath,
-      downloadedBytes: response.downloadedBytes || 0,
-      totalBytes: response.totalBytes || 0,
-      downloadSpeed: response.downloadSpeed || 0,
-      etaSeconds: response.etaSeconds || 0,
-      peers: response.peers,
-      currentPhase: response.currentPhase,
-      errorMessage: response.errorMessage,
-    }
-
-    if (response.ready && response.status === 'COMPLETED') {
-      isReady.value = true
-      await loadSubtitles()
-    }
-  } catch (err: any) {
-    console.error('Failed to load existing job:', err)
-    error.value = 'Failed to load video'
-  }
-}
 
 // Cleanup on unmount
 onUnmounted(() => {
