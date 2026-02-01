@@ -1,15 +1,21 @@
 package com.hypertube.gateway.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
+import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 
@@ -37,6 +43,18 @@ import java.util.List;
 @EnableWebFluxSecurity
 public class SecurityConfig {
 
+    @Value("${jwt.secret}")
+    private String jwtSecret;
+
+    @Bean
+    public ReactiveJwtDecoder jwtDecoder() {
+        // Create a SecretKey from the JWT secret string
+        byte[] secretKeyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
+        SecretKey secretKey = new SecretKeySpec(secretKeyBytes, "HmacSHA256");
+
+        return NimbusReactiveJwtDecoder.withSecretKey(secretKey).build();
+    }
+
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
         return http
@@ -46,9 +64,18 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeExchange(exchanges -> exchanges
                 // Public endpoints - no authentication required
+                // V1 API paths (versioned)
                 .pathMatchers("/api/v1/auth/login", "/api/v1/auth/register").permitAll()
                 .pathMatchers("/api/v1/auth/oauth/**").permitAll()
                 .pathMatchers("/api/v1/auth/password-reset/**").permitAll()
+
+                // Frontend service-based paths
+                .pathMatchers("/api/users/auth/login", "/api/users/auth/register").permitAll()
+                .pathMatchers("/api/users/auth/oauth/**").permitAll()
+                .pathMatchers("/api/users/auth/password-reset/**").permitAll()
+                .pathMatchers("/api/users/auth/logout").permitAll()
+
+                // Actuator endpoints
                 .pathMatchers("/actuator/health", "/actuator/info").permitAll()
 
                 // All other endpoints require authentication

@@ -27,7 +27,7 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping({"/api/auth", "/api/v1/auth"})  // Support both paths for compatibility
 @RequiredArgsConstructor
 @Validated
 public class AuthController {
