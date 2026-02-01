@@ -174,19 +174,25 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hypertube}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-hypertube_user}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-hypertube}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      VIDEO_CACHE_PATH: ${VIDEO_CACHE_PATH:-/var/hypertube/videos}
-      SUBTITLE_CACHE_PATH: ${SUBTITLE_CACHE_PATH:-/var/hypertube/subtitles}
+      STREAMING_STORAGE_BASE_PATH: /var/hypertube/videos
+      STREAMING_STORAGE_SUBTITLE_PATH: /var/hypertube/subtitles
+      STREAMING_TORRENT_DOWNLOAD_PATH: /tmp/hypertube/downloads
       OPENSUBTITLES_API_KEY: ${OPENSUBTITLES_API_KEY}
     volumes:
       - video_cache:/var/hypertube/videos
       - subtitle_cache:/var/hypertube/subtitles
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
