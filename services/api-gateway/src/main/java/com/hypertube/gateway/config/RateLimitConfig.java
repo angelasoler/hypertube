@@ -34,7 +34,8 @@ public class RateLimitConfig {
             String forwardedFor = exchange.getRequest().getHeaders().getFirst("X-Forwarded-For");
             if (forwardedFor != null && !forwardedFor.isEmpty()) {
                 // Take first IP in chain (original client)
-                String clientIp = forwardedFor.split(",")[0].trim();
+                int index = forwardedFor.indexOf(',');
+                String clientIp = (index == -1 ? forwardedFor : forwardedFor.substring(0, index)).trim();
                 return Mono.just(clientIp);
             }
 
