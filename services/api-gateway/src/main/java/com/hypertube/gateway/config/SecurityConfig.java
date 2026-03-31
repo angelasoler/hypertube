@@ -49,8 +49,9 @@ public class SecurityConfig {
     @Bean
     public ReactiveJwtDecoder jwtDecoder() {
         // Create a SecretKey from the JWT secret string
+        // Use HmacSHA512 to match the user-service JWT generation (HS512)
         byte[] secretKeyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
-        SecretKey secretKey = new SecretKeySpec(secretKeyBytes, "HmacSHA256");
+        SecretKey secretKey = new SecretKeySpec(secretKeyBytes, "HmacSHA512");
 
         return NimbusReactiveJwtDecoder.withSecretKey(secretKey).build();
     }
@@ -77,6 +78,9 @@ public class SecurityConfig {
 
                 // Actuator endpoints
                 .pathMatchers("/actuator/health", "/actuator/info").permitAll()
+
+                // Streaming endpoints - temporary public access for testing
+                .pathMatchers("/api/streaming/**", "/api/v1/streaming/**").permitAll()
 
                 // All other endpoints require authentication
                 .anyExchange().authenticated()
