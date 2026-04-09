@@ -8,6 +8,7 @@ import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.UnsupportedJwtException;
 import io.jsonwebtoken.security.Keys;
 import io.jsonwebtoken.security.SignatureException;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,8 +51,15 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
     @Value("${jwt.audience:hypertube-api}")
     private String jwtAudience;
 
+    private SecretKey secretKey;
+
     public JwtAuthenticationFilter() {
         super(Config.class);
+    }
+
+    @PostConstruct
+    public void init() {
+        this.secretKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
@@ -140,10 +148,8 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
      * @throws JwtException if validation fails
      */
     private Claims validateToken(String token) {
-        SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-
         return Jwts.parser()
-            .verifyWith(key)
+            .verifyWith(secretKey)
             .requireIssuer(jwtIssuer)  // Validate issuer
             .requireAudience(jwtAudience)  // Validate audience
             .build()
